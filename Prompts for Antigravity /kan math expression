@@ -1,0 +1,214 @@
+# Prompt: Refactor and Improve `8_kan_math_expression.py`
+
+## Context
+
+You are working on a financial machine learning pipeline that uses PyKAN (Kolmogorov-Arnold Networks) for cryptocurrency classification via the Triple Barrier Method. The file `src/8_kan_math_expression.py` handles symbolic regression: it prunes a trained KAN, fits symbolic functions to the learned activations, and extracts human-readable mathematical equations representing the model's decision logic. Each edge in the KAN learns an activation of the form `c * f(a*x + b) + d`, where `f` is chosen from a symbolic library.
+
+The pipeline structure is:
+
+```
+src/
+  1_data_loader.py      # API calls (yfinance, CoinMetrics)
+  2_features.py         # Technical indicators, moving averages
+  3_econometrics.py     # Stationarity, FFD, SADF tests
+  4_labels.py           # Triple Barrier Method (can produce 2 or 3 classes)
+  5_cv.py               # Combinatorial Purged K-Fold with Embargo
+  6_preproc.py          # RobustScaling, Feature Selection (inside CV)
+  7_models.py           # KAN architecture, training loops, probability calibration
+  8_kan_math_expression.py  # THIS FILE — symbolic extraction
+  9_backtester.py       # Trading strategy on calibrated probabilities
+```
+
+The KAN model is trained in `7_models.py` using PyKAN (`from kan import KAN`). After training, `8_kan_math_expression.py` is called to extract interpretable equations. The extracted equations should later be consumable by `9_backtester.py` and by research notebooks.
+
+## Current Code
+
+```python
+# kan_math_expression.py — KAN symbolic regression / equation extraction.
+import logging
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+import torch
+from kan import KAN
+from sklearn.metrics import accuracy_score, roc_auc_score
+
+logger = logging.getLogger(__name__)
+
+def evaluate_symbolic_fidelity(pruned_model: KAN, X_val: pd.DataFrame, y_val: pd.Series) -> Dict[str, float]:
+    """Evaluate predicting power in pure symbolic mode to prove formula fidelity."""
+    pruned_model.use_symbolic(True)
+    with torch.no_grad():
+        test_input = torch.tensor(X_val.values, dtype=torch.float32)
+        raw_out = pruned_model(test_input)
+        proba = torch.softmax(raw_out, dim=1)[:, 1].numpy()
+        pred = torch.argmax(raw_out, dim=1).numpy()
+    acc = accuracy_score(y_val.values, pred)
+    try:
+        auc = roc_auc_score(y_val.values, proba)
+    except ValueError:
+        auc = float('nan')
+    logger.info("Symbolic Fidelity: Accuracy = %.4f, ROC-AUC = %.4f", acc, auc)
+    return {"accuracy": acc, "roc_auc": auc}
+
+
+def extract_symbolic_expression(kan_model: KAN, feature_names: List[str], lib: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Prune a KAN and extract exact symbolic mathematical equations."""
+    if lib is None:
+        lib = ["x", "x^2", "x^3", "log", "exp", "tanh", "abs", "sqrt"]
+    logger.info("Pruning KAN model …")
+    pruned = kan_model.prune()
+    logger.info("Fitting symbolic functions from lib=%s …", lib)
+    pruned.auto_symbolic(lib=lib)
+
+    expressions: Dict[str, Dict[str, str]] = {}
+    num_layers = len(pruned.symbolic_fun)
+    prev_layer_nodes = feature_names.copy()
+
+    for layer_idx in range(num_layers):
+        layer = pruned.symbolic_fun[layer_idx]
+        n_out = len(layer.funs_name)
+        n_in = len(layer.funs_name[0])
+        current_layer_nodes = []
+        layer_eqs = {}
+
+        for out_node in range(n_out):
+            terms = []
+            for in_node in range(n_in):
+                fn = layer.funs_name[out_node][in_node]
+                if fn in ("0", "0.0"):
+                    continue
+                r2 = layer.r2[out_node, in_node].item()
+                if r2 < 0.90:
+                    logger.warning(
+                        "Poor symbolic fit at layer %d, edge (%d -> %d): '%s' with R^2 = %.4f",
+                        layer_idx, in_node, out_node, fn, r2
+                    )
+                a, b, c, d = layer.affine[out_node, in_node].tolist()
+                inner_var = prev_layer_nodes[in_node]
+                inner_term = f"({a:.4f} * [{inner_var}] + {b:.4f})"
+                if fn == "x":
+                    f_val = inner_term
+                elif fn == "x^2":
+                    f_val = f"({inner_term})^2"
+                elif fn == "x^3":
+                    f_val = f"({inner_term})^3"
+                else:
+                    f_val = f"{fn}{inner_term}"
+                term_str = f"({c:.4f} * {f_val} + {d:.4f})"
+                terms.append(term_str)
+
+            node_name = f"z_{out_node}" if layer_idx == num_layers - 1 else f"H_{layer_idx}_{out_node}"
+            current_layer_nodes.append(node_name)
+            if terms:
+                layer_eqs[node_name] = " + \n      ".join(terms)
+            else:
+                layer_eqs[node_name] = "0.0000"
+
+        expressions[f"layer_{layer_idx}"] = layer_eqs
+        prev_layer_nodes = current_layer_nodes
+
+    final_eq = "P(Up) = exp(z_1) / (exp(z_0) + exp(z_1))"
+    feat_map = {i: f for i, f in enumerate(feature_names)}
+
+    result = {
+        "pruned_model": pruned,
+        "expressions": expressions,
+        "final_equation": final_eq,
+        "feature_map": feat_map,
+    }
+    logger.info("Symbolic extraction complete (%d layers parsed)", num_layers)
+    return result
+
+
+def print_trading_equations(expr: Dict[str, Any]) -> None:
+    """Pretty-print the extracted mathematical KAN equations."""
+    print("\n" + "=" * 80)
+    print(" EXTRACTED MATHEMATICAL TRADING EQUATIONS")
+    print("=" * 80)
+    for layer_name, layer_eqs in expr["expressions"].items():
+        print(f"\n--- {layer_name.upper()} ---")
+        for node_name, equation in layer_eqs.items():
+            print(f"{node_name} = {equation}\n")
+    print(f"\n--- FINAL PREDICTION (Softmax) ---")
+    print(expr["final_equation"])
+    print("\n" + "-" * 40)
+    print("Input Node Mapping (Top → Bottom):")
+    for idx, feat in expr["feature_map"].items():
+        print(f"  Node {idx}: {feat}")
+    print("=" * 80)
+```
+
+## Required Improvements (implement ALL of these)
+
+### 1. Add Post-Symbolification Fine-Tuning (CRITICAL)
+
+The current code calls `prune()` then `auto_symbolic()` but **never fine-tunes the affine parameters afterward**. According to the standard KAN training procedure (see Algorithm 1 from the KAN literature), Step 4 after symbolification is to fine-tune the affine parameters `(a, b, c, d)` through additional training epochs. Without this, the extracted coefficients are suboptimal.
+
+**What to do:** After `pruned.auto_symbolic(lib=lib)`, add a fine-tuning pass. Accept optional parameters for the fine-tuning configuration: `finetune_epochs` (default 30), `finetune_lr` (default 0.0004), and the training dataset `(X_train, y_train)`. Call `pruned.fit(...)` or the equivalent PyKAN training method targeting only the affine parameters. If no training data is provided, log a warning that fine-tuning was skipped.
+
+### 2. Dynamic Multi-Class Softmax (CRITICAL)
+
+The `final_eq` is hardcoded as binary: `"P(Up) = exp(z_1) / (exp(z_0) + exp(z_1))"`. However, the Triple Barrier Method in `4_labels.py` can produce 3 classes (down=0, neutral=1, up=2) or 2 classes. The module must detect the actual number of output nodes from the last layer and dynamically build the softmax expression.
+
+**What to do:** After traversing all layers, read `n_out` from the final layer. If `n_out == 2`, generate binary softmax. If `n_out == 3`, generate a 3-class softmax: `P(class_k) = exp(z_k) / (exp(z_0) + exp(z_1) + exp(z_2))` for k in {0, 1, 2}. Store all class equations, not just one. Also, `evaluate_symbolic_fidelity` must handle multi-class: use `softmax` over all classes, compute per-class and macro-averaged metrics.
+
+### 3. SymPy Integration for Algebraic Simplification
+
+The current string-based equation building produces verbose, unsimplified expressions like `(1.0000 * (1.0000 * [x] + 0.0000) + 0.0000)` which should just be `x`. String manipulation cannot simplify these.
+
+**What to do:**
+- Add `import sympy` and build SymPy expression trees instead of (or in addition to) raw strings.
+- After constructing each node's expression, call `sympy.simplify()` to reduce redundant terms.
+- Add a method `export_latex(expressions)` that converts the simplified SymPy expressions to LaTeX strings for research papers.
+- Keep the raw string version as well for logging/debugging, but the primary output should be SymPy objects.
+- Round coefficients with absolute value below a threshold (e.g., 1e-4) to zero during simplification.
+
+### 4. Device Awareness and State Safety
+
+`evaluate_symbolic_fidelity` creates tensors on CPU regardless of where the model lives. Also, `use_symbolic(True)` is called without restoring the original state, and `kan_model.prune()` can mutate the original model.
+
+**What to do:**
+- Detect the model's device and create tensors on the same device.
+- Save and restore `use_symbolic` state with a context manager or try/finally block.
+- Deep-copy the model before pruning (`import copy; pruned = copy.deepcopy(kan_model).prune()`) to avoid mutating the caller's model.
+- Move outputs to CPU only when converting to numpy.
+
+### 5. Serialization to JSON
+
+The extracted expressions only exist in memory. `9_backtester.py` and research notebooks need persistent access.
+
+**What to do:**
+- Add a function `save_expressions(expr: Dict, path: str)` that serializes the expressions dict (excluding the PyTorch model object) to JSON. Include: all layer equations (as strings), the final softmax equation, the feature map, R² per edge, the symbolic library used, and a timestamp.
+- Add a companion `load_expressions(path: str)` function.
+- Convert `print_trading_equations` to return a formatted string via the logger instead of using raw `print()` calls, so it works properly in notebook and pipeline contexts.
+
+### 6. R² Quality Gate with Configurable Threshold
+
+The current R² check at 0.90 only logs a warning. There should be an option to reject poor fits.
+
+**What to do:**
+- Make the R² threshold a parameter (default 0.90).
+- Add a `strict_mode: bool = False` parameter. When `True`, edges below the threshold raise a `ValueError` instead of just warning. When `False`, keep current warning behavior.
+- Collect all R² values into the result dict so they can be inspected downstream.
+
+### 7. Wrap PyKAN Internal Attribute Access in Try/Except
+
+Accessing `layer.funs_name`, `layer.affine`, `layer.r2` directly is fragile across PyKAN versions.
+
+**What to do:** Wrap each access in try/except with clear error messages indicating which PyKAN attribute was missing and suggesting a compatible version. This prevents cryptic `AttributeError` tracebacks.
+
+### 8. Feature Importance from Coefficients
+
+Since the full affine decomposition is already extracted, computing feature importance is straightforward.
+
+**What to do:** Add a function `compute_feature_importance(expressions, feature_names)` that computes the absolute magnitude of each input feature's contribution through the network (using the `|c * a|` product as a proxy for first-layer edges). Return a sorted dictionary of `{feature_name: importance_score}`.
+
+## Constraints
+
+- Keep the module self-contained in a single file (`8_kan_math_expression.py`).
+- Maintain backward compatibility: existing calls to `extract_symbolic_expression(model, features)` without the new optional parameters must still work identically.
+- Use only standard libraries plus `sympy`, `numpy`, `pandas`, `torch`, `sklearn`, and `kan` (PyKAN). Do not introduce new heavy dependencies.
+- All new functions must have type hints, docstrings, and use the module-level `logger` (never raw `print`).
+- Follow the existing code style: snake_case, Google-style docstrings, 4-space indentation.
