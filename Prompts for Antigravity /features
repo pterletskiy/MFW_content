@@ -1,0 +1,117 @@
+# Prompt — Improvements for `b_features.py` (Feature Engineering Module)
+
+You are an expert Python developer specializing in quantitative finance and financial machine learning. I need you to refactor and improve my `b_features.py` module, which handles feature engineering for a Bitcoin direction prediction pipeline built on the methodology of Marcos López de Prado's *Advances in Financial Machine Learning*.
+
+The module produces strictly causal (backward-looking) features, tags each with a statistical metadata type (`raw_level`, `ratio`, `bounded_oscillator`, `zero_centered`, `cyclical`, `event_time`), and applies a universal `.shift(1)` lag to prevent look-ahead bias. The downstream pipeline includes FFD stationarity transforms (`3_econometrics.py`), Triple-Barrier Labeling (`4_labels.py`), Combinatorial Purged K-Fold CV (`5_cv.py`), and KAN-based modeling (`7_models.py`).
+
+Below is the full source code of the file. Please implement **all eight improvements** described after it.
+
+---
+
+## Current source code
+
+```python
+[PASTE THE FULL b_features.py CODE HERE]
+```
+
+---
+
+## Improvements to implement
+
+### 1. Make the FFD contract explicit (high priority)
+
+Several features are tagged as `raw_level` (all EMAs, VWMAs, ATR, Realized_Vol). These are non-stationary and must be fractionally differentiated downstream by `3_econometrics.py`. Currently nothing in this module documents or enforces that contract. Add a module-level constant `_REQUIRES_FFD = {"raw_level"}` and include a clear docstring note in `create_all_features` stating that features with tags in `_REQUIRES_FFD` must undergo FFD before being fed to a model. Also add a `logger.warning` at the end of `create_all_features` that counts and reports how many `raw_level` features exist, reminding the developer they need stationarity treatment.
+
+### 2. Reduce feature multicollinearity (high priority)
+
+The module produces multiple highly correlated pairs: `RSI_7`/`RSI_14`, `EMA_7`/`EMA_14`, `ATR_7`/`ATR_14`, `ROC_7d`/`ROC_14d`, `Realized_Vol_7d`/`Realized_Vol_14d`. López de Prado (Chapter 8) warns that substitution effects from correlated features dilute MDI importance and make MDA underestimate both features. Add an optional post-creation correlation filter: a function `filter_correlated_features(df, metadata, threshold=0.95)` that, for each pair of features with Pearson correlation above the threshold, drops the one with shorter lookback window (keeping the more informative, slower feature). The function should return the pruned DataFrame and pruned metadata dict. Integrate it as an optional step in `create_all_features` controlled by a `drop_correlated: bool = False` parameter.
+
+### 3. Eliminate the repeated `_add` helper (DRY fix)
+
+The identical `_add(col, series, tag)` closure is redefined inside both `create_ta_features` and `create_onchain_features`. Refactor this by creating a lightweight `FeatureBuilder` class at module level:
+
+```python
+class FeatureBuilder:
+    """Accumulates feature columns and their metadata tags."""
+    def __init__(self, df: pd.DataFrame):
+        self.df = df.copy()
+        self.meta: Dict[str, str] = {}
+
+    def add(self, col: str, series: pd.Series, tag: str) -> None:
+        self.df[col] = series
+        self.meta[col] = tag
+```
+
+Then use `FeatureBuilder` inside each `create_*` function instead of the closure pattern.
+
+### 4. Extract `days_since_halving` to module level
+
+The `days_since_halving` function is currently nested inside `create_ta_features`, making it untestable and hiding a hardcoded constant (`HALVING_DATES`). Move both `HALVING_DATES` and `days_since_halving` to module level. Make `halving_dates` a parameter with a default value so it can be overridden for testing or when new halvings occur:
+
+```python
+HALVING_DATES = pd.to_datetime(["2012-11-28", "2016-07-09", "2020-05-11", "2024-04-20"])
+
+def days_since_halving(index: pd.DatetimeIndex, halving_dates: pd.DatetimeIndex = HALVING_DATES) -> np.ndarray:
+    ...
+```
+
+### 5. Add input validation
+
+At the top of `create_ta_features`, add:
+
+```python
+missing = _RAW_OHLCV - set(df.columns)
+if missing:
+    raise ValueError(f"DataFrame is missing required OHLCV columns: {missing}")
+```
+
+Also validate that the DataFrame index is a `DatetimeIndex` (required for the calendar features):
+
+```python
+if not isinstance(df.index, pd.DatetimeIndex):
+    raise TypeError("DataFrame index must be a DatetimeIndex for calendar feature extraction.")
+```
+
+### 6. Add epsilon guards to all division operations
+
+Currently, `.replace(0, np.nan)` is applied inconsistently. Some denominators (like EMA, VWMA, `moving_average` in Bollinger Bands, and `upper_band - lower_band` in `BB_Position`) lack protection. Apply `.replace(0, np.nan)` consistently to every denominator in every ratio and division operation throughout the module. Specifically fix:
+
+- Lines computing `Price_to_EMA_*` (divide by EMA which could be zero in early rows)
+- Lines computing `Price_to_VWMA_*` (divide by VWMA which could be zero/NaN)
+- `BB_Width` denominator (`moving_average`)
+- `BB_Position` denominator (`upper_band - lower_band`)
+- `EMA7_EMA14_ratio`, `EMA50_EMA200_ratio`, `VWMA7_VWMA14_ratio`, `VWMA50_VWMA200_ratio`
+
+### 7. Add output validation assertions
+
+At the end of both `create_ta_features` and `create_onchain_features`, before returning, add sanity checks:
+
+```python
+VALID_TAGS = {"raw_level", "ratio", "bounded_oscillator", "zero_centered", "cyclical", "event_time"}
+assert all(tag in VALID_TAGS for tag in meta.values()), f"Invalid metadata tag found: {set(meta.values()) - VALID_TAGS}"
+assert len(meta) == len(set(meta)), "Duplicate feature names detected in metadata"
+nan_only = [c for c in meta if df[c].isna().all()]
+if nan_only:
+    logger.warning("Features with all-NaN values detected: %s", nan_only)
+```
+
+### 8. Fix the OSCP SMA inconsistency
+
+Line 141 computes `OSCP` using `.rolling(5).mean()` and `.rolling(10).mean()`, which are simple moving averages. This contradicts the documented design decision to drop SMA in favor of EMA for KAN Orthogonality. Replace with EWM-based computation:
+
+```python
+_add("OSCP", df["Close"].ewm(span=5, adjust=False).mean() - df["Close"].ewm(span=10, adjust=False).mean(), "zero_centered")
+```
+
+---
+
+## Constraints
+
+- Preserve all existing function signatures and return types (backward compatibility).
+- Maintain the metadata tagging system exactly as it is (same tag names, same semantics).
+- Do not add any new third-party dependencies beyond what is already imported (`numpy`, `pandas`, `ta`).
+- Keep the universal `.shift(1)` lag rule and `_SHIFT_EXEMPT_TAGS` logic untouched.
+- Write clear docstrings for any new functions or classes.
+- Use type hints consistently throughout.
+
+Please return the complete, refactored `b_features.py` file with all eight improvements applied.
