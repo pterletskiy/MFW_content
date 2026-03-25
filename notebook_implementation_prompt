@@ -1,437 +1,534 @@
-# Prompt: Build a Complete Notebook Roadmap and Project Report Guide
+# Prompt: Build the MFW_Pipeline Notebook Implementation Roadmap
 
 ## Who You Are
 
-You are helping me build a master orchestrator notebook (`MFW_Pipeline.ipynb`)
-for a financial machine learning project. The notebook predicts BTC daily price
-direction using Kolmogorov-Arnold Networks (KANs), following Marcos López de
-Prado's AFML methodology.
+You are helping me implement a master Jupyter notebook (`MFW_Pipeline.ipynb`)
+that orchestrates a financial ML pipeline for binary BTC direction prediction
+using Kolmogorov-Arnold Networks (KANs). The pipeline follows Marcos López de
+Prado's *Advances in Financial Machine Learning* (AFML) methodology.
 
 ## What I Need
 
-Create a single markdown file called `notebook_roadmap.md` that serves two
-purposes simultaneously:
+Produce a single markdown file called `notebook_implementation_guide.md`.
+This file is the definitive block-by-block roadmap for the notebook. Each
+block corresponds to one or more source modules in `src/`. The guide covers
+modules `a_data_loader.py` through `h_kan_math_expression.py`. I will
+implement `i_backtester.py` separately later.
 
-1. **Implementation roadmap**: a numbered block-by-block guide specifying
-   exactly what each notebook cell does, which `src/` module it calls, what
-   inputs it receives, what outputs it produces, and what leakage risks exist.
-2. **Project report skeleton**: each block includes a "Report Section" note
-   mapping it to the thesis chapter or section where its results will be
-   presented (e.g., "Report: §3.2 — Feature Engineering").
-
-The file must cover the **complete** pipeline from data ingestion through
-final report table generation. No block may be left as pseudocode or
-"TODO." Every block must be concrete enough that a developer can implement
-it without ambiguity.
+The output must be a clean, implementation-ready reference that a collaborator
+could follow at 2am without ambiguity. It is also the narrative spine of my
+project report: each block should read as a self-contained section explaining
+what happens, why it happens in that order, and what the leakage implications
+are.
 
 ---
 
-## Project Architecture (for reference)
+## Project Structure (for reference)
 
 ```
-src/
-  a_data_loader.py    # API calls (yfinance, CoinMetrics), raw merging
-  b_features.py       # Backward-looking TA, moving averages, ROC
-  c_econometrics.py   # Stationarity testing, FFD, SADF bubble tests
-  d_labels.py         # Triple-Barrier Method, dynamic vol, t0-t1, sample weights
-  e_cv.py             # Combinatorial Purged K-Fold & Embargo logic
-  f_preproc.py        # RobustScaling & Feature Selection (inside CV only)
-  g_models.py         # Model architectures, training loops, probability calibration
-  h_kan_math_expression.py  # Symbolic mathematical extraction
-  i_backtester.py     # Trading strategy evaluation on calibrated probabilities
+D:.
+|   MFW_Pipeline.ipynb
+|
++---data
+|   +---interim      # Continuous features & FFD applied (Pre-CV)
+|   +---processed    # Purged, embargoed, and scaled folds (CV ready)
+|   \---raw          # Untouched API downloads (.parquet)
++---models
++---skills
+|       skill_kan_modeling.md
+|       skill_mldp_pipeline.md
+|
+\---src
+    |   a_data_loader.py
+    |   b_features.py
+    |   c_econometrics.py
+    |   d_labels.py
+    |   e_cv.py
+    |   f_preproc.py
+    |   g_models.py
+    |   h_kan_math_expression.py
+    |   __init__.py
 ```
-
-Two governance skill files control all decisions:
-- `skill_mldp_pipeline.md` — preprocessing, labeling, CV, sample weights,
-  feature importance, bet sizing, backtesting statistics.
-- `skill_kan_modeling.md` — KAN architecture, two-phase training, pruning,
-  symbolic extraction, calibration, baselines, CPCV integration.
 
 ---
 
-## Block Inventory (all blocks the roadmap must contain)
+## Governing Rules (apply to every block)
 
-The roadmap must contain exactly these blocks in this order. Do not merge,
-skip, or reorder them. Each block gets its own section in the markdown.
+### Rule 1 — Writing Style
 
-### Pre-CV Blocks (safe to run on full dataset)
+Every comment and markdown cell must be **crisp, imperative, and
+unambiguous**. Write like an engineering spec, not a thesaurus stress-test.
 
-**Block 0 — Environment and Imports**
-- All library imports and `src/` module imports.
-- Seed initialization: set `np.random.seed`, `torch.manual_seed`,
-  `random.seed` with a default seed list `[42, 123, 456, 789, 1024]`.
-- Pipeline configuration dict: assets, date range, on-chain metrics,
-  CV parameters (n_splits, pct_embargo), KAN architecture grid.
-- Print environment versions for reproducibility.
-- Calls: nothing. Pure setup.
+**Forbidden filler words:** "natively," "structurally," "boundaries,"
+"limits," "mappings," "executing," "dynamically," "inherently," unless they
+carry precise technical meaning in that specific sentence.
 
-**Block 1 — Data Ingestion**
-- Calls: `a_data_loader.fetch_data(pipeline_config)`
-- Output: `raw_df` (pd.DataFrame, daily OHLCV + on-chain).
-- Missing data: forward-fill only. No interpolation (uses future endpoints).
-- Save to `data/raw/raw_btc.parquet`.
-- Report Section: §3.1 — Data Description.
+**Test for every comment:** would a collaborator reading this at 2am know
+exactly what to do and why? If not, rewrite it.
 
-**Block 2 — Macro EDA (Target-Independent)**
-- Safe pre-split because it never touches labels or future data.
-- Plots: log-scale price history, missing data heatmap, raw feature
-  distributions, correlation matrix of raw inputs (no labels).
-- Print: date range, observation count, feature count.
-- Drop zero-variance columns and columns with >60% NaN.
-- Report Section: §3.1 — Data Description (figures).
+Bad: *"Execute mathematically continuous statistical boundary maps retaining
+test fold isolation logic sequentially."*
+Good: *"Apply log transforms and compute rolling SADF. FFD is NOT applied
+here — d* must be fitted inside the CV loop."*
 
-**Block 3 — Feature Engineering**
-- Calls: `b_features.create_all_features(clean_df)`
-- Output: `df` with engineered features, `feature_metadata` dict.
-- All rolling/expanding features internally lagged by 1 day (`.shift(1)`).
-- This is safe pre-split because features are purely backward-looking.
-- Print: feature count, feature names grouped by category.
-- Report Section: §3.2 — Feature Engineering.
+Bad: *"Validations tuning metrics resolving optimal probability allocations
+executing boundary distributions natively mapped inside train matrices."*
+Good: *"Tune the decision threshold on the calibration partition only.
+Apply the chosen threshold unchanged to the test fold."*
 
-**Block 4 — Pre-CV Econometrics**
-- Calls: `c_econometrics.apply_continuous_econometrics(df, feature_metadata)`
-- Does: log transforms on strictly positive series, rolling SADF computation
-  (lagged by 1 day before use as predictor).
-- Does NOT apply FFD here. FFD requires fitting d* which must happen inside
-  CV folds.
-- Preserve `Raw_Close` column unmodified for barrier dollar calculations.
-- Report Section: §3.3 — Stationarity and Explosiveness Analysis.
+### Rule 2 — Leakage Discipline
 
-**Block 5 — Triple-Barrier Labeling and Sample Weights**
-- Calls: `d_labels.getDailyVol()`, `d_labels.cusum_filter()`,
-  `d_labels.getEvents()`, `d_labels.getBins()`, `d_labels.getSampleWeights()`
-- Steps:
-  1. Compute EWMA daily volatility (span=20) on `Raw_Close`.
-  2. Apply symmetric CUSUM filter (h = σ_ewm) to select events.
-  3. Run Triple-Barrier Method with symmetric barriers `ptSl=[1,1]`,
-     dynamic volatility thresholds.
-  4. Extract labels (+1, -1, 0), t0, t1 per event.
-  5. Compute uniqueness-based sample weights from overlapping label spans.
-- Print: class balance (+1, -1, 0 counts and fractions), average holding
-  period (t1 - t0), fraction hitting vertical barrier.
-- If >60% neutral labels, STOP and adjust barrier widths.
-- Save to `data/processed/labels.parquet`.
-- Report Section: §3.4 — Labeling Strategy.
+Mark every step that carries leakage risk with a single-line warning:
+`# ⚠️ LEAKAGE: [what would leak] → [why this placement prevents it]`
 
-**Block 6 — Three-Class to Binary Reduction**
-- Default: drop all neutral labels (0). Classifier sees only +1 and -1.
-- Justification: neutral events hit the timeout barrier, meaning price
-  didn't move enough to be actionable. Including them as negatives
-  dilutes signal.
-- If dropping neutrals removes >40% of events, STOP and widen TBM barriers.
-- Re-report class balance after reduction.
-- Alternative (for meta-labeling): merge 0 with -1 into "do not go long."
-  Document which reduction is used.
-- Report Section: §3.4 — Labeling Strategy (label reduction subsection).
+Do not write paragraph-length leakage explanations. One line per risk.
 
-**Block 7 — CV Fold Construction**
-- Calls: `e_cv.PurgedKFold()`, `e_cv.CombinatorialPurgedKFold()`
-- Instantiate both:
-  - Purged K-Fold (n_splits=6, pct_embargo=0.01) for model development.
-  - CPCV (n_splits=6, n_test_splits=2) for final backtest paths (φ=5 paths).
-- Both require the `t1` object from Block 5 for purging.
-- Print: fold sizes, number of purged observations per fold, CPCV path count.
-- Report Section: §4.1 — Cross-Validation Design.
+### Rule 3 — Artefact Tracking
 
-**Block 8 — Target-Dependent EDA (Inside Fold 0 Only)**
-- Run ONLY on the training partition of fold 0 from Purged K-Fold.
-- Plots: label distribution, feature-to-label correlation heatmap (top 15
-  features), sample weight distribution, holding period histogram.
-- This block exists for researcher insight. Its outputs inform feature
-  engineering decisions but must not influence test-fold evaluation.
-- Report Section: §3.5 — Exploratory Analysis (with caveat that this is
-  single-fold, training-only).
+Every block that produces a saved file must end with a comment listing
+the output path and format:
+`# OUTPUT → data/interim/features.parquet`
 
-### Inner-CV Blocks (everything behind the CV-Wall)
+### Rule 4 — No Pseudocode
 
-**Block 9 — Feature Importance (MDI + MDA + SFI)**
-- This block runs BEFORE any model training. Required by skill_mldp_pipeline §7.
-- Loop over Purged K-Fold splits. For each fold:
-  1. Fit auxiliary Random Forest (500 trees, max_features=1) on train fold.
-  2. Compute MDI (mean decrease impurity) from the fitted RF.
-  3. Compute MDA (mean decrease accuracy) via permutation importance on
-     the purged validation fold, scored by neg_log_loss.
-  4. Compute SFI (single feature importance) by training a LogisticRegression
-     on each feature independently.
-- Aggregate across folds: mean and std of MDI, MDA, SFI per feature.
+Every code cell must be runnable. If a function hasn't been implemented
+yet in `src/`, write a stub with a `raise NotImplementedError("TODO: ...")`.
+Do not comment out critical steps (especially KAN Phase 2 grid refinement).
+
+### Rule 5 — Skill File Compliance
+
+The two skill files (`skill_mldp_pipeline.md` and `skill_kan_modeling.md`)
+are the authoritative specification. The notebook implements them, it does
+not reinterpret or skip sections. If a skill file says a step is required,
+the notebook must have a block for it.
+
+---
+
+## Block Map
+
+Build the guide with exactly these blocks in this order. Each block gets:
+- A markdown header with the block number and title.
+- A 2–3 sentence explanation of what it does and why it's in this position.
+- The source module(s) it calls.
+- The code cell(s).
+- Output artefacts.
+
+### Block 0 — Environment and Imports
+
+All pip installs (commented out) and imports. Organize imports into groups:
+data/core, visualization, pipeline modules (`src.*`), sklearn/metrics,
+serialization. Import everything needed for the entire notebook here,
+including modules for feature importance, KAN training, pruning, and
+symbolic extraction.
+
+Required imports from `src/`:
+- `a_data_loader`: `fetch_data`
+- `b_features`: `create_all_features`
+- `c_econometrics`: `apply_continuous_econometrics`, `find_optimal_d`,
+  `apply_ffd`
+- `d_labels`: `getDailyVol`, `cusum_filter`, `getEvents`, `getBins`,
+  `getSampleWeights`
+- `e_cv`: `PurgedKFold`, `CombinatorialPurgedKFold`
+- `f_preproc`: `fit_transform_scaler`, `compute_MDI`, `compute_MDA`,
+  `compute_SFI`, `filter_features_by_consensus`
+- `g_models`: `LogRegBaseline`, `RFBaseline`, `LGBMBaseline`, `MLPBaseline`,
+  `PureKAN`, `ModelTrainer`
+- `h_kan_math_expression`: `suggest_symbolic`, `fix_symbolic`,
+  `extract_formula`, `symbolic_fidelity_test`, `regime_generalization_test`
+
+Also import: `json`, `warnings`, `numpy`, `pandas`, `matplotlib`,
+`seaborn`, `sklearn.calibration`, `sklearn.metrics`, `scipy.stats` (for
+the Normal CDF used in bet sizing).
+
+Include a `pipeline_config` dictionary with all global hyperparameters:
+```python
+pipeline_config = {
+    "assets": ["BTC-USD"],
+    "start_date": "2015-01-01",
+    "end_date": "2025-12-31",
+    "vol_span": 20,
+    "pt_sl": [1, 1],
+    "min_ret": 0.01,
+    "max_holding_days": 10,
+    "n_splits": 6,
+    "n_test_splits": 2,
+    "pct_embargo": 0.01,
+    "nan_threshold": 0.60,
+    "sfi_threshold": 0.0,
+    "kan_seeds": [42, 123, 456, 789, 1024],
+    "kan_architectures": {
+        "K1": [4, 1],
+        "K2": [8, 1],
+        "K3": [4, 4, 1],
+        "K4": [8, 4, 1],
+    },
+    "kan_grid_coarse": 5,
+    "kan_grid_fine": 20,
+    "kan_k": 3,
+    "phase1_steps": 200,
+    "phase1_lr": 1e-3,
+    "phase2_steps": 100,
+    "phase2_lr": 5e-4,
+    "lamb": 1e-4,
+    "lamb_entropy": 2.0,
+    "prune_node_thresh": 5e-2,
+    "prune_edge_thresh": 5e-3,
+    "prune_finetune_steps": 50,
+    "calibration_split": 0.8,
+    "symbolic_r2_threshold": 0.97,
+}
+```
+
+Also set global reproducibility:
+```python
+import random, torch
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+```
+
+### Block 1 — Data Ingestion (`a_data_loader.py`)
+
+Fetch raw daily OHLCV from yfinance and on-chain metrics from CoinMetrics.
+Forward-fill only (no interpolation, which uses future endpoints). Save to
+`data/raw/`. Report row count and date range.
+
+### Block 2 — Macro EDA (Safe Pre-Split)
+
+Visualizations that use only raw feature distributions with no label
+information. Safe to run before any split. Include:
+- Log-scale price history plot.
+- Missing data heatmap.
+- Raw statistical summary table.
+- Pairwise feature correlation heatmap (features only, no labels).
+
+Add a markdown cell explaining the two-tier EDA design: this block is safe
+because it never touches labels. Target-dependent EDA lives in Block 8.
+
+### Block 3 — Dead Feature Removal (Pre-Engineering)
+
+Drop columns with zero variance or >60% missing values. This must happen
+before feature engineering because constant columns crash rolling
+covariance calculations. Report which columns were dropped and why.
+
+### Block 4 — Feature Engineering (`b_features.py`)
+
+Compute backward-looking technical indicators: moving averages, ROC,
+RSI, Bollinger width, ATR, etc. All rolling statistics must be internally
+lagged by `.shift(1)`. The function returns both the enriched DataFrame
+and a `feature_metadata` dict classifying each feature (continuous,
+bounded oscillator, binary flag).
+
+Add a comment: "All features use only past data and are lagged by one
+period. This makes feature engineering safe to run pre-split."
+
+### Block 5 — Pre-CV Econometrics (`c_econometrics.py`)
+
+Apply transformations that are safe pre-split because they don't learn
+distributional parameters from the data:
+- Preserve `Raw_Close` as an unaltered copy for TBM dollar barriers.
+- Apply log transforms to strictly positive, scale-skewed variables.
+- Compute rolling SADF as a predictive feature (lagged by one day).
+
+**Critical note in a markdown cell:** FFD is NOT applied here. Fitting d*
+requires seeing the distribution of the series, so it must happen inside
+the CV loop. This block only does deterministic, parameter-free transforms.
+
+Save to `data/interim/`.
+
+### Block 6 — Triple-Barrier Labeling and Sample Weights (`d_labels.py`)
+
+This block produces the complete label set. Steps:
+
+1. **EWMA volatility** (span=20 days, backward-looking only).
+2. **CUSUM filter** on daily returns with threshold h = σ_ewm. This
+   produces sparse event timestamps, preventing oversampling in quiet
+   periods. Explain in a markdown cell why CUSUM matters for BTC
+   specifically (alternates between dead calm and explosive moves).
+3. **Triple-Barrier Method**: for each CUSUM event at t0, apply symmetric
+   barriers [1, 1] × volatility with a vertical barrier at max_holding_days.
+   Record t0, t1 (first barrier touch), and label (+1, -1, 0).
+4. **Three-class to binary reduction**: drop neutral labels (0) by default.
+   Add a markdown cell explaining the rationale: neutral events hit the
+   timeout barrier, meaning price didn't move enough to be actionable.
+   Report class balance BEFORE and AFTER dropping neutrals. If dropping
+   neutrals removes >40% of the dataset, the barriers are too tight —
+   print a warning.
+5. **Sample weights**: compute uniqueness-based weights from concurrent
+   label overlap. Optionally apply return-attribution and time-decay
+   multipliers. Pass `sample_weight` downstream, never recompute it.
+
+Output: `events`, `bins`, `t1`, `weights`. Save labels to
+`data/processed/labels.parquet`.
+
+### Block 7 — Cross-Validation Construction (`e_cv.py`)
+
+Instantiate both CV generators:
+- `PurgedKFold(n_splits=6, t1=t1, pct_embargo=0.01)` — for model
+  development and feature importance.
+- `CombinatorialPurgedKFold(n_splits=6, n_test_splits=2, t1=t1,
+  pct_embargo=0.01)` — for final CPCV backtest paths (φ = 5 paths).
+
+Explain in a markdown cell:
+- Purging removes training observations whose label windows overlap with
+  test timestamps.
+- Embargo removes a 1% buffer after each test fold to kill serial
+  correlation leakage.
+- CPCV generates multiple backtest paths for SR distribution reporting.
+
+### Block 8 — Target-Dependent EDA (Inside CV, Fold 0 Only)
+
+This EDA uses label information and therefore MUST run inside a CV fold.
+Use fold 0 of PurgedKFold only. Include:
+- Label balance bar chart.
+- Feature-to-label correlation heatmap (top 15 features by variance).
+- Volatility distribution of labeled events.
+- Average holding period (t1 - t0) histogram.
+
+Break after fold 0. Add a markdown cell: "This block runs inside the CV
+loop to prevent label information from leaking into pre-split analysis."
+
+### Block 9 — Feature Importance (Inside CV) (`f_preproc.py`)
+
+**This block must run before any model training.** It implements AFML Ch. 8.
+
+Use PurgedKFold (not CPCV) for efficiency. For each fold:
+
+1. **MDI** (Mean Decrease Impurity): fit an auxiliary Random Forest
+   (`max_features=1`, 500 trees, `class_weight='balanced'`) on the
+   training fold. Extract `feature_importances_`. Replace zeros with NaN
+   before averaging across trees.
+2. **MDA** (Mean Decrease Accuracy): for each feature, permute its column
+   in the test fold and measure the drop in `neg_log_loss`. Score relative
+   to baseline (unpermuted) performance.
+3. **SFI** (Single Feature Importance): train a logistic regression on
+   each feature in isolation. Record OOS AUC per feature.
+
+After all folds:
+- Aggregate MDI, MDA, SFI scores across folds (mean ± std).
+- Rank features across all three methods.
 - Drop features in the bottom quartile across ALL THREE methods.
-- Save to `models/feature_importance.json`.
-- Print: ranked feature importance table, dropped features.
-- Report Section: §4.2 — Feature Importance Analysis.
+- Save `models/feature_importance.json`.
+- Display a summary table and a triple-bar-chart of MDI/MDA/SFI rankings.
 
-**Block 10 — Inner-CV Model Development Loop**
-- This is the main training loop. Iterate over Purged K-Fold splits.
-- For each fold:
-  1. **FFD fitting**: fit d* on training fold Close (and other price-like
-     series). Apply fitted d* to both train and test folds. Record d*, τ,
-     ADF statistic. Drop FFD warm-up rows.
-  2. **Scaling**: fit RobustScaler on training fold only. Transform both folds.
-  3. **Feature filtering**: apply the importance-based feature mask from Block 9.
-  4. **Baseline training** (all four, identical features/labels/splits):
-     - Logistic Regression (L2, calibrated with Platt)
-     - Random Forest (500 trees, class_weight='balanced')
-     - LightGBM (binary objective, is_unbalance=True)
-     - MLP (2-layer, BCEWithLogitsLoss, same input/output shape as KAN)
-     Each baseline gets n_iter=20 randomized hyperparameter search on
-     validation fold. Log all results to trial_registry.
-  5. **KAN training** — loop over architecture grid [K1–K4] × seed list:
-     - Phase 1: coarse grid (grid=5), Adam, lr=1e-3, 200 steps, L1 + entropy
-       regularization, BCE with sample weights, early stopping on val AUC
-       (patience=20).
-     - Phase 2: grid refinement (grid=20), lr=5e-4, 100 steps, early stopping
-       (patience=10). THIS IS NOT OPTIONAL.
-     - Log per-edge activation variance every 50 steps. Flag dead splines
-       (activation std < 1e-3 for 50+ consecutive steps). Flag gradient norm
-       > 10.0 or < 1e-6.
-     - Save training diagnostics to `models/training_diagnostics.json`.
-  6. **Probability calibration**: Platt scaling on held-out 20% partition of
-     training fold (never test fold). Report Brier score, ECE, reliability
-     diagram.
-  7. **Threshold tuning**: grid search (0.30 to 0.70, step 0.01) on validation
-     fold F1. Apply chosen threshold unchanged to test fold.
-  8. **Spline extrapolation check**: for each test observation, check if any
-     feature falls outside training knot grid [min, max]. Report fraction
-     out-of-grid. Clamp inputs to grid boundaries. Flag observations where
-     raw logit magnitude > 2× max training logit.
-  9. **Registry logging**: record per (fold, architecture, seed):
-     AUC, F1, Brier, log-loss, threshold, d*, kept features, dead spline
-     count, out-of-grid fraction.
-- Save `models/trial_registry.json` and `models/preprocessing_log.json`.
-- Report Section: §4.3 — Model Training and Validation.
+Add a markdown cell with the AFML quote: "Backtesting is not a research
+tool. Feature importance is."
 
-**Block 11 — Model Selection**
-- Select best KAN configuration by **median validation AUC across seeds**.
-- Model selection gate (all three must pass):
-  1. Validation AUC ≥ LightGBM baseline AUC.
-  2. Brier score ≤ Logistic Regression baseline Brier score.
-  3. DSR > 0.95 (computed in Block 14).
-- If no KAN passes all three, report the best KAN alongside best baseline
-  and discuss the gap. Do not force a KAN result.
-- Print: comparison table of all architectures × seeds, selected config.
-- Report Section: §4.4 — Model Selection.
+If MDA concludes that ALL features are unimportant, print a hard stop:
+"Do not proceed. Revisit feature engineering."
 
-### Post-Training Blocks
+### Block 10 — The Inner-CV Training Loop (`f_preproc.py`, `c_econometrics.py`, `g_models.py`)
 
-**Block 12 — Pruning**
-- Apply to the selected KAN architecture, retrained on each CPCV fold.
-- Stage 1: node pruning (threshold=5e-2).
-- Stage 2: edge pruning (threshold=5e-3).
-- Fine-tune 50 steps at low LR after pruning.
-- Pruning gate: accept only if validation AUC drops < 0.02 from pre-pruned.
-  If exceeded, loosen threshold by 50% and retry.
-- Save pruned checkpoints to `models/kan_pruned_*.pt`.
-- Report Section: §5.1 — Network Simplification.
+This is the core training block. Everything inside this loop is behind
+the CV-Wall. Use PurgedKFold for model development.
 
-**Block 13 — Function Stability Check**
-- For the top-3 features (by importance), plot the learned spline activation
-  functions across all CPCV training folds on the same axes.
-- If shapes change qualitatively across folds, the learned structure is
-  regime-dependent. Document this finding; do not suppress it.
-- Save plots to `models/spline_plots/`.
-- Report Section: §5.2 — Activation Function Stability.
+**The loop structure for each fold:**
 
-**Block 14 — CPCV Backtest Paths and DSR**
-- Calls: `e_cv.CombinatorialPurgedKFold`, `i_backtester.py`
-- For each CPCV path:
-  1. Train KAN (selected config) on the path's training set.
-  2. Calibrate probabilities (Platt on train partition).
-  3. Convert calibrated P to bet sizes via the AFML formula:
-     z = (p - 0.5) / sqrt(p*(1-p)/n), m = 2Φ(z) - 1.
-  4. Apply size discretization (minimum |m| threshold to cover round-trip
-     costs, default 10 bps per side for BTC).
-  5. Evaluate implied strategy: annualized SR, max drawdown, hit ratio.
-- Aggregate across φ paths:
-  - Mean, std, min, max SR.
-  - Fraction of paths with SR > 0 (must be >70% to be considered reliable).
-  - PSR and DSR (using N = total trial count from trial_registry.json,
-    Var(SR) = variance of SR across all trials).
-- DSR must exceed 0.95 for the result to be considered non-spurious.
-- Save to `models/backtest_stats.json`.
-- Report Section: §6.1 — Backtesting Results, §6.2 — Statistical Reliability.
+```
+for fold_idx, (train_idx, test_idx) in enumerate(cv_splits):
 
-**Block 15 — Symbolic Extraction**
-- Calls: `h_kan_math_expression.py`
-- Prerequisites gate (all must pass before running this block):
-  - Pruning gate passed (Block 12).
-  - Validation AUC ≥ logistic regression baseline.
-  - DSR > 0.95 (Block 14).
-  - Function stability confirmed (Block 13).
-- Extract from the CPCV fold whose validation AUC is closest to the
-  **median** across all folds (most representative, not best-case).
-- Steps:
-  1. `model.suggest_symbolic()` with library
-     ['x', 'x^2', 'x^3', 'exp', 'log', 'tanh', 'sin', 'abs', 'sqrt'].
-  2. Fix edges where top candidate R² ≥ 0.97. Keep spline for edges below.
-  3. Extract formula via `model.symbolic_formula()`.
-- Symbolic fidelity tests (all three required):
-  - AUC(symbolic) ≥ AUC(KAN) - 0.03.
-  - LogLoss(symbolic) ≤ LogLoss(KAN) + 0.05.
-  - Spearman ρ(symbolic probs, KAN probs) ≥ 0.95.
-- If any test fails, label the formula as an approximation, not equivalent.
-- Evaluate formula on all other folds' test sets. Report AUC gap per fold.
-  If gap > 0.05 on any fold, formula is fold-specific.
-- Save to `models/symbolic_formula.json`.
-- Report Section: §5.3 — Symbolic Formula Extraction, §5.4 — Fidelity Tests.
+    # --- STEP 1: Split ---
+    # Extract X_train, X_test, y_train, y_test, w_train, w_test.
+    # Drop Raw_Close from features (it's only needed for TBM barriers).
 
-**Block 16 — Regime Generalization Test**
-- Split test observations into sub-regimes by SADF signal:
-  - Explosive regime: SADF > critical value.
-  - Stable regime: SADF ≤ critical value.
-- Evaluate symbolic formula AUC separately on each sub-regime.
-- Compare to full-period AUC.
-- If formula degrades sharply in one regime, report that it captured a
-  regime-specific pattern, not a universal structure. This is a valid
-  scientific finding.
-- Save to `models/regime_fidelity.json`.
-- Report Section: §5.5 — Regime Generalization.
+    # --- STEP 2: FFD (inside CV) ---
+    # ⚠️ LEAKAGE: d* fitted on full dataset leaks variance → fit on train only
+    # Call find_optimal_d() on each price-like column in X_train.
+    # Apply the fitted d* to both X_train and X_test.
+    # Record d*, τ, ADF statistic in preprocessing_log.
+    # Correlation check: if corr(FFD, original) < 0.90, flag a warning.
 
-**Block 17 — Meta-Labeling (Optional)**
-- Run only if the primary KAN achieves acceptable recall but low precision.
-- Steps:
-  1. Take primary KAN's positive predictions as events.
-  2. Generate meta-labels: 1 = true positive, 0 = false positive.
-  3. Train secondary classifier (LogReg or small RF) on meta-labels,
-     scored by F1, with class_weight='balanced'.
-  4. Final position size = (side from primary) × (P from secondary).
-- Compare F1 with and without meta-labeling layer.
-- Report Section: §6.3 — Meta-Labeling Analysis (if applicable).
+    # --- STEP 3: Scaling ---
+    # ⚠️ LEAKAGE: scaler quantiles from test → fit RobustScaler on train only
+    # fit_transform on X_train, transform-only on X_test.
 
-**Block 18 — Final Report Tables and Figures**
-- Generate all summary tables needed for the thesis:
-  1. Feature importance ranking table (MDI, MDA, SFI, consensus rank).
-  2. Model comparison table: all baselines + KAN configs (AUC, F1, Brier,
-     log-loss per fold, mean ± std).
-  3. CPCV SR distribution table (mean, std, min, max, fraction > 0).
-  4. DSR computation table (N trials, Var(SR), SR*, DSR value).
-  5. Symbolic formula with feature interpretation.
-  6. Regime generalization table (AUC per sub-regime).
-  7. Backtesting performance table (SR, max DD, hit ratio, HHI).
-- Generate all summary figures:
-  1. Feature importance bar chart.
-  2. Reliability diagram (calibration).
-  3. CPCV SR distribution histogram.
-  4. Spline stability plots.
-  5. Equity curves across CPCV paths.
-  6. Regime-conditional AUC comparison.
-- Save tables as CSV to `models/report_tables/`.
-- Save figures as PNG to `models/report_figures/`.
-- Report Section: §7 — Results Summary.
+    # --- STEP 4: Feature filtering ---
+    # Apply the consensus feature mask from Block 9.
+    # (Feature importance was already computed. Here we just apply the mask.)
 
-**Block 19 — Leakage Audit**
-- Final automated checklist (all must return True):
-  - [ ] All rolling features lagged by ≥1 period.
-  - [ ] d* for FFD fitted on training fold only (verify from preprocessing_log).
-  - [ ] CUSUM threshold h computed from training data only.
-  - [ ] Scaler fitted on purged + embargoed training fold only.
-  - [ ] Feature selection performed inside CV loop.
-  - [ ] No label-derived quantity used as a predictor.
-  - [ ] t1 strictly forward-looking from t0.
-  - [ ] Class balance reported after binary reduction.
-  - [ ] SADF lagged before predictor use.
-  - [ ] Calibration fitted on train partition, never test fold.
-  - [ ] Threshold tuned on validation fold, applied unchanged to test.
-  - [ ] trial_registry.json contains all tested configurations for DSR.
-- Print PASS/FAIL per item. If any FAIL, do not proceed to thesis submission.
-- Report Section: Appendix A — Leakage Audit Certificate.
+    # --- STEP 5: Train all baselines ---
+    # Logistic Regression (L2, calibrated with Platt)
+    # Random Forest (500 trees, class_weight='balanced')
+    # LightGBM (binary objective, is_unbalance=True)
+    # MLP (2-layer, same input/output shape as KAN, BCEWithLogitsLoss)
+    # Each baseline gets n_iter=20 randomized hyperparameter search.
+    # Record all results to trial_registry.
 
----
+    # --- STEP 6: Train KAN grid (multi-seed) ---
+    # Loop over architectures K1–K4:
+    #   Loop over seeds [42, 123, 456, 789, 1024]:
+    #     Phase 1: coarse grid (grid=5), 200 steps, lr=1e-3
+    #     Phase 2: refine(grid=20), 100 steps, lr=5e-4  ← NOT OPTIONAL
+    #     Log training diagnostics (grad norm, dead spline count)
+    #     Record validation AUC per (architecture, seed) → trial_registry
+    # Select best architecture by MEDIAN validation AUC across seeds.
 
-## Writing Rules (Non-Negotiable)
+    # --- STEP 7: Probability calibration ---
+    # Split training fold 80/20 chronologically.
+    # Retrain best KAN on the 80% partition.
+    # Fit Platt scaler (LogisticRegression on raw logits) on the 20% partition.
+    # ⚠️ LEAKAGE: calibrating on test fold → calibrate on train partition only
+    # Evaluate: Brier score, ECE (15-bin), reliability diagram.
 
-These rules govern the prose style of the entire document. Violating them
-is grounds for a full rewrite.
+    # --- STEP 8: Threshold tuning ---
+    # Grid search threshold ∈ [0.30, 0.70] step 0.01 on calibration partition.
+    # Select threshold maximizing F1 on calibration partition.
+    # Apply threshold unchanged to test fold.
 
-1. **No filler words.** The following words are banned unless they carry
-   specific technical meaning in context: "natively," "structurally,"
-   "dynamically," "inherently," "explicitly," "boundaries," "limits,"
-   "mappings," "executing," "resolving." If you catch yourself stringing
-   three or more of these together, delete the sentence and rewrite it
-   in plain English.
-
-2. **Every comment must pass the 2am test.** A tired developer reading the
-   comment at 2am must know exactly what to do and why. If a comment
-   requires re-reading, it is too complex. Rewrite it.
-
-3. **One idea per sentence.** No compound sentences with three subordinate
-   clauses. Short, declarative, imperative.
-
-4. **Technical precision over impressive vocabulary.** Say "fit scaler on
-   train fold only" not "execute scaling boundary distributions isolating
-   variance metrics across mapped arrays."
-
-5. **Comments explain WHY, not WHAT.** The code shows what. The comment
-   explains why. Bad: `# Drop Raw_Close column`. Good:
-   `# Remove Raw_Close — it's used for barrier calculations, not as a
-   predictor. Leaving it in leaks future price levels.`
-
-6. **No passive voice in action items.** Write "Fit RobustScaler on
-   X_train" not "The RobustScaler is fitted on the training data."
-
-7. **Consistent terminology.** Use these terms exactly:
-   - "training fold" (not "train set," "training arrays," "train matrices")
-   - "test fold" (not "test boundaries," "test limits," "validation targets")
-   - "validation partition" (the held-out slice of the training fold used
-     for calibration or threshold tuning)
-   - "CV-Wall" (the boundary between pre-CV and inner-CV operations)
-   - "trial_registry" (the JSON file tracking all tested configurations)
-   - "leakage" (not "peeking," "contamination," "information bleed")
-
----
-
-## Format Requirements
-
-For each block, use this exact template:
-
-```markdown
-## Block N — [Title] (`module_name.py`)
-
-**Calls:** `module.function_name()`
-**Inputs:** [list of dataframes/objects this block receives]
-**Outputs:** [list of dataframes/objects this block produces]
-**Saved artefacts:** [files written to disk, with paths]
-**Report section:** §X.Y — [Title]
-
-### Purpose
-
-[2-3 sentences max. What this block does and why it matters.]
-
-### Steps
-
-1. [Step one — imperative, concrete]
-2. [Step two]
-...
-
-### Leakage risks
-
-- ⚠️ [Specific risk and how it's mitigated]
-
-### Diagnostics
-
-- Print: [what gets printed to notebook output]
-- Plot: [what gets plotted, if anything]
-
-### Failure gates
-
-- STOP if [condition]. Remedy: [action].
+    # --- STEP 9: Evaluate and log ---
+    # Compute on test fold: AUC, F1, Brier, log-loss, MCC.
+    # Record to trial_registry with fold_idx, architecture, seed, threshold.
 ```
 
+Save `models/trial_registry.json` and `models/preprocessing_log.json`.
+
+Add a markdown cell summarizing per-fold results in a table.
+
+### Block 11 — CPCV Evaluation Loop (`e_cv.py`, `g_models.py`)
+
+Separate from Block 10. This block uses the best KAN architecture
+(selected in Block 10 by median AUC) and trains it on every CPCV fold
+combination.
+
+For each CPCV split:
+- Train the selected KAN architecture (Phase 1 + Phase 2) with the
+  median-performing seed.
+- Calibrate and evaluate on the test fold.
+- Record: AUC, F1, Brier, annualized SR of the implied strategy.
+
+After all CPCV splits:
+- Report SR distribution (mean, std, min, max, fraction of paths > 0).
+- If >30% of paths have SR < 0, print a warning: "Strategy is unreliable."
+- Save CPCV results to `models/backtest_stats.json`.
+
+### Block 12 — Pruning (`g_models.py`)
+
+Select the CPCV fold whose validation AUC is closest to the **median**
+across all folds (the most representative model, not the best or worst).
+
+1. **Node pruning**: `model.prune_node(threshold=5e-2)`.
+2. **Edge pruning**: `model.prune_edge(threshold=5e-3)`.
+3. **Fine-tune**: retrain for 50 steps at low LR to recover any loss.
+4. **Pruning gate**: accept only if AUC drops < 0.02 relative to
+   pre-pruned model. If it exceeds 0.02, loosen thresholds by 50% and
+   retry.
+
+Save pruned checkpoint to `models/kan_pruned_median.pt`.
+
+### Block 13 — Function Stability Check (`g_models.py`)
+
+Plot the learned spline activation functions for the top-3 features
+(by feature importance) across ALL CPCV folds. Arrange as a grid:
+rows = features, columns = folds.
+
+Add a markdown cell: "If the spline shapes change qualitatively across
+folds, the learned structure is regime-dependent. The symbolic formula
+extracted in the next block cannot be claimed as universal. Document this
+finding — do not suppress it."
+
+Save plots to `models/spline_plots/`.
+
+### Block 14 — Symbolic Extraction (`h_kan_math_expression.py`)
+
+**Prerequisites gate** — the code must check all four conditions before
+proceeding. If any fails, print the failure and stop:
+- [ ] Pruning gate passed (Block 12).
+- [ ] Validation AUC ≥ logistic regression baseline AUC.
+- [ ] DSR > 0.95 on at least one CPCV path.
+- [ ] Function stability visually confirmed (Block 13).
+
+If all pass:
+
+1. **Suggest symbolic candidates** per edge using the library
+   `['x', 'x^2', 'x^3', 'exp', 'log', 'tanh', 'sin', 'abs', 'sqrt']`.
+2. **Fix edges** where the top candidate has R² ≥ 0.97. Keep the spline
+   for edges below this threshold — do not force a bad symbolic fit.
+3. **Extract the closed-form formula** via `model.symbolic_formula()`.
+4. **Symbolic fidelity tests** (all three must be reported):
+   - AUC parity: AUC(symbolic) ≥ AUC(KAN) − 0.03
+   - Log-loss parity: LogLoss(symbolic) ≤ LogLoss(KAN) + 0.05
+   - Rank correlation: Spearman ρ(symbolic probs, KAN probs) ≥ 0.95
+5. **Regime generalization test**: split test data by SADF signal into
+   explosive (SADF > critical value) and stable (SADF ≤ critical value)
+   sub-regimes. Evaluate the symbolic formula's AUC on each separately.
+   Compare to the full-period AUC.
+
+Save: `models/symbolic_formula.json` (formula, R², fidelity results,
+regime AUCs), `models/regime_fidelity.json`.
+
+Add a markdown cell with the financial interpretation of the formula:
+which features survived, what the retained functions suggest about the
+price dynamics (e.g., "log of lagged volume suggests the model captures
+volume acceleration as a directional signal").
+
+### Block 15 — DSR Computation and Final Report
+
+Compute the Deflated Sharpe Ratio from `trial_registry.json`:
+- N = total number of (architecture, seed, fold) configurations tested.
+- Var(SR) = variance of SR estimates across all trials.
+- Apply the DSR formula from AFML Ch. 11.
+
+Produce a final summary markdown cell containing:
+- Best KAN architecture and its median AUC across seeds.
+- SR distribution from CPCV (mean, std, min, max, % paths > 0).
+- DSR value and whether it exceeds 0.95.
+- Symbolic formula (if extraction succeeded).
+- Regime generalization verdict.
+- Comparison table: KAN vs. all baselines on AUC, F1, Brier.
+
+### Block 16 — Leakage Audit Checklist
+
+A markdown cell with a manually verified checklist. Each item has a
+checkbox and a one-line description of what to verify:
+
+- [ ] All rolling indicators lagged by at least one period.
+- [ ] No feature uses the prediction-day value to predict the same day.
+- [ ] d* for FFD fitted on training fold only.
+- [ ] CUSUM threshold h computed from training data only.
+- [ ] RobustScaler fitted on purged + embargoed training fold only.
+- [ ] Feature selection mask derived from Block 9 (inside CV).
+- [ ] No label-derived quantity used as a predictor.
+- [ ] t1 object verified as strictly forward-looking from t0.
+- [ ] Class balance reported before and after neutral label dropping.
+- [ ] SADF series lagged by one day before use as predictor.
+- [ ] Platt calibrator fitted on training partition, not test fold.
+- [ ] Threshold tuned on calibration partition, applied unchanged to test.
+- [ ] Phase 2 grid refinement executed (not commented out).
+- [ ] Multi-seed evaluation completed for all KAN architectures.
+- [ ] Feature importance (MDI + MDA + SFI) completed before model training.
+
 ---
 
-## Final Checks
+## What NOT to Include
 
-Before returning the file, verify:
+- **No `i_backtester.py` blocks.** I will implement backtesting separately.
+  The guide ends at DSR computation and the final summary report. Bet
+  sizing from calibrated probabilities (AFML Ch. 10) will be part of the
+  backtester implementation.
+- **No meta-labeling blocks.** Meta-labeling is a recommended extension
+  (MLDP skill §8) but not part of the core pipeline. If the primary KAN
+  achieves acceptable results, meta-labeling is unnecessary. Add a single
+  markdown cell at the end noting: "If precision is low and recall is
+  acceptable, consider a meta-labeling extension per skill_mldp_pipeline §8."
 
-1. Every `src/` module (a through i) appears in at least one block.
-2. Every output artefact listed in both skill files' §12/§13 tables is
-   produced by exactly one block.
-3. The block sequence matches the dependency chain: no block references
-   an output that hasn't been produced by a prior block.
-4. The trial_registry is updated in every block that tests a configuration.
-5. DSR is computable from the trial_registry at Block 14 (N and Var(SR)
-   are both available).
-6. The symbolic extraction prerequisites (Block 15) reference specific
-   outputs from Blocks 12, 13, and 14.
-7. No banned filler words appear anywhere in the document.
-8. Every block has a "Report section" mapping.
-9. The document reads as a clean, professional project report that a
-   thesis committee would accept as methodology documentation.
+---
+
+## Output Format Requirements
+
+1. The file must be valid markdown with fenced code blocks (```python).
+2. Every code block must be syntactically valid Python. No pseudocode.
+   If a `src/` function doesn't exist yet, write a stub call with a
+   comment: `# TODO: implement in src/x_module.py`.
+3. Use `pipeline_config["key"]` to reference all hyperparameters rather
+   than hardcoding numbers in the code cells.
+4. Every block must have a markdown cell before it explaining (a) what
+   happens, (b) why it's in this position, and (c) what leakage risk
+   it guards against (if any).
+5. Target approximately 17 blocks (Block 0 through Block 16).
+6. Total length: aim for thoroughness over brevity. Each block's code
+   cell should be complete enough to run, with inline comments explaining
+   non-obvious lines. Expect the full document to be 600–900 lines.
