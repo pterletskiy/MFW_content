@@ -1,0 +1,145 @@
+# Prompt: Improve `data_loader.py` for a Financial ML Pipeline
+
+## Context
+
+You are an expert Python developer specializing in financial machine learning pipelines. I have a module called `data_loader.py` that is part of a larger pipeline (the "MFW Asset Direction Predictor"). The module is responsible for:
+
+- Fetching raw OHLCV data via yfinance for a primary asset (e.g., BTC-USD, SPY, GLD).
+- Fetching macro indicators (DXY, VIX, Treasury yields) via yfinance.
+- Fetching on-chain cryptocurrency data from CoinMetrics (community API) and Blockchain.com.
+- Caching all fetched data to Parquet in its raw form (never transformed).
+- Aligning all sources to a common UTC midnight DatetimeIndex.
+- Left-joining secondary features onto the primary asset's date grid with capped forward-fill.
+- Applying a 1-day forward shift to all secondary/macro features after caching to prevent look-ahead bias.
+
+The pipeline downstream includes: feature engineering (technical indicators), fractional differentiation for stationarity, triple-barrier labeling (following López de Prado's methodology), combinatorial purged k-fold cross-validation, robust scaling, and model training (including KAN architectures).
+
+## The Code
+
+I will attach `data_loader.py` to this message. Please read it in full before making changes.
+
+## Improvements Required
+
+Apply all of the following improvements to the code. Preserve all existing functionality, docstrings style, logging conventions, section headers, and the `__all__` export list. Do not remove any existing function or config preset.
+
+### 1. Centralize the default end date
+
+The string `"2026-03-07"` is hardcoded in every function signature and every config dict. Replace all occurrences with a single module-level constant called `_DEFAULT_END`. Define it near the top of the file alongside the other constants. Update every function default and every config preset to reference this constant. Example:
+
+```python
+_DEFAULT_START_BTC = "2014-09-17"
+_DEFAULT_START_TRAD = "2010-01-01"
+_DEFAULT_END = "2026-03-07"
+```
+
+### 2. Add schema validation for feature_list dicts
+
+Currently each feature specification is a plain `Dict[str, Any]`, so typos in keys (e.g., `"provder"` instead of `"provider"`) pass silently and fall through to defaults. Add a validation layer using either `TypedDict` with a runtime check, a `dataclass`, or Pydantic `BaseModel`. At minimum, validate:
+
+- Every dict has a `"source"` key.
+- When `source == "yfinance"`, a `"ticker"` key must be present.
+- When `source == "onchain"`, a `"provider"` key must be present and its value must be one of `"coinmetrics"`, `"blockchain_com"`, or `"both"`.
+- When `source == "coinmetrics"`, an `"asset"` key must be present.
+- Warn on any unexpected keys that are not recognized by the router.
+
+Place validation inside `fetch_secondary_features` before dispatching, or in a dedicated `_validate_feature_spec()` helper.
+
+### 3. Make cache keys more robust
+
+The current cache path embeds the exact `start` and `end` strings, so changing one character causes a full cache miss. Additionally, for Blockchain.com, the key is derived from column names rather than API chart keys, meaning a column rename silently bypasses a valid cache. Improve this by:
+
+- For Blockchain.com, derive the cache key from the sorted API chart keys (the dict keys), not from the column name values.
+- Optionally, consider a hash-based filename approach (e.g., `hashlib.md5` of the canonical sorted parameters) to avoid excessively long filenames. If you take this approach, also store a small JSON sidecar file mapping hash to human-readable params for debuggability.
+
+### 4. Handle partial failures in `fetch_blockchain_com`
+
+When individual metric fetches fail, the function logs a warning and continues. If most metrics fail, a nearly empty DataFrame passes downstream without any alarm. Improve this by:
+
+- Tracking the count of successes and failures.
+- Logging a summary line after the loop, e.g., `"Blockchain.com: retrieved 3/9 metrics successfully."`
+- Adding a `min_success_ratio` parameter (default `0.5`). If the fraction of successful fetches falls below this threshold, raise a `RuntimeError` instead of returning a sparse DataFrame.
+
+### 5. Remove redundant timezone handling in `fetch_coinmetrics`
+
+Lines that do `tz_localize(None).normalize()` followed immediately by `_to_utc_midnight()` (which internally calls `tz_localize("UTC").normalize()`) perform a double normalization. Simplify to a single call. Replace:
+
+```python
+df["time"] = df["time"].dt.tz_localize(None).dt.normalize()
+df = df.set_index("time")
+df.index = _to_utc_midnight(df.index)
+```
+
+With:
+
+```python
+df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
+df = df.set_index("time")
+df.index = _to_utc_midnight(df.index)
+```
+
+### 6. Remove `inplace=True` usage in `_validate_df`
+
+Replace `df.sort_index(inplace=True)` with `df = df.sort_index()`. This aligns with modern pandas best practices (Copy-on-Write in pandas 2.x) and is consistent with the rest of the module, which avoids inplace operations.
+
+### 7. Make cache staleness actionable
+
+`_read_cache` currently warns when a cache file is older than 24 hours but always returns the stale data. Improve this by:
+
+- Adding a `max_cache_age_hours` parameter to `_read_cache` (default: `None`, meaning no expiry).
+- When `max_cache_age_hours` is set and the file exceeds that age, return `None` (triggering a re-download) instead of the stale data.
+- Add a module-level constant `_DEFAULT_CACHE_MAX_AGE_HOURS = None` that each public fetch function can pass through.
+- Keep the existing warning log for informational purposes.
+
+### 8. Simplify the merge loop in `fetch_blockchain_com`
+
+Replace the manual incremental merge loop:
+
+```python
+merged: Optional[pd.DataFrame] = None
+for _, tmp in frames.items():
+    if merged is None:
+        merged = tmp
+    else:
+        merged = pd.merge(merged, tmp, on="date", how="left")
+```
+
+With a cleaner concat-based approach:
+
+```python
+indexed_frames = [tmp.set_index("date") for tmp in frames.values()]
+merged = pd.concat(indexed_frames, axis=1)
+```
+
+Then adjust the subsequent lines accordingly (remove the `set_index("date")` call that currently follows the loop since the index is already set).
+
+### 9. Add data reasonableness checks
+
+Add a new helper `_check_reasonableness(df, name, asset_category=None)` that flags:
+
+- Single-day returns exceeding 50% for traditional assets or 80% for crypto (log a warning, do not drop).
+- Suspiciously constant stretches where the Close price is identical for more than 5 consecutive days (log a warning).
+- Any negative Volume values (log a warning and clip to zero).
+
+Call this helper inside `fetch_primary_asset` after validation and before caching.
+
+### 10. Log NaN statistics after merge
+
+At the end of `merge_datasets`, add a summary log that reports the total NaN count and percentage across the merged DataFrame. Example:
+
+```python
+total_cells = merged.shape[0] * merged.shape[1]
+nan_count = merged.isnull().sum().sum()
+if nan_count > 0:
+    logger.info(
+        "merge_datasets: %d NaNs remaining (%.1f%% of %d cells)",
+        nan_count, 100 * nan_count / total_cells, total_cells,
+    )
+```
+
+## Output Instructions
+
+- Return the complete, updated `data_loader.py` file.
+- Preserve all existing section headers (the `═══` banners), docstring style (NumPy format), and logging conventions.
+- Preserve all existing config presets and the `__all__` list (extend `__all__` if you add any new public symbols).
+- Do not change the fundamental behavior of any function (e.g., do not alter the shift logic, the caching strategy, or the merge method).
+- Add brief inline comments to explain any non-obvious changes.
