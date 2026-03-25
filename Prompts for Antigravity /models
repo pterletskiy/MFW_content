@@ -1,0 +1,107 @@
+# Prompt: Refactor and Improve g_models.py
+
+You are an expert in PyTorch, financial machine learning, and Kolmogorov-Arnold Networks (KANs). I will provide you with my `g_models.py` file, which defines model architectures and training logic for a quantitative pipeline that uses triple-barrier labeling, AFML sample weighting, and KASPER-style regime detection. I need you to implement all of the improvements listed below. Do not remove any existing functionality; refactor and extend the code.
+
+## Context
+
+This file is part of a larger pipeline with this structure:
+
+```
+src/
+  1_data_loader.py    # API calls & raw merging
+  2_features.py       # Backward-looking TA features
+  3_econometrics.py   # Stationarity testing, FFD, SADF
+  4_labels.py         # Triple-Barrier Method, MLDP Uniqueness Sample Weights
+  5_cv.py             # Combinatorial Purged K-Fold & Embargo
+  6_preproc.py        # RobustScaling & Feature Selection (inside CV only)
+  7_models.py         # THIS FILE — architectures, training, probability calibration
+  8_kan_math_expression.py  # Symbolic extraction
+  9_backtester.py     # Strategy evaluation on calibrated probabilities
+```
+
+The file references concepts from:
+- "Advances in Financial Machine Learning" by López de Prado (AFML), specifically Ch. 4 (sample weights), Ch. 7 (purged CV), Ch. 9 (hyper-parameter tuning), Ch. 10 (bet sizing)
+- The KASPER paper ("KANs for Stock Prediction and Explainable Regimes"), which uses Gumbel-Softmax regime detection, contrastive + orthogonality losses, AdamW optimizer, ReduceLROnPlateau scheduler, and batch size 32
+
+## Improvements Required
+
+### 1. Fix the broken ARLogistic class (CRITICAL)
+
+The `predict_proba` method currently returns a constant 0.5 array and has a `pass` statement inside the `if hasattr(self.model, 'classes_')` block. This means the AR baseline never produces real predictions and silently inflates KAN performance in comparisons. Additionally, `_make_lags` returns 3 values on the fail-safe path (line 77: `return X, y, np.ones(N)`) but only 2 values on the normal path, which will cause unpacking errors.
+
+Fix: Implement proper autoregressive inference at test time (feed last `self.lags` predicted/true labels as features) and make the return signature consistent.
+
+### 2. Rewrite all comments and docstrings
+
+Nearly every comment uses inflated jargon without communicating anything useful. Examples of the current style: "mapping bounds explicitly," "tracking matrix dimensions exactly," "extracting isolated probabilities robustly." These repeat across the file and make it harder, not easier, to understand the code.
+
+Rewrite all comments and docstrings to follow this principle: each comment should explain **why** something is done, not restate **what** the code does in inflated language. Remove any comment that doesn't add information a new team member would need.
+
+### 3. Add mini-batch training with DataLoader
+
+`fit_fold` currently sends the entire training set through the model every epoch (full-batch). This eliminates stochastic regularization from batching and will blow up memory if the dataset grows.
+
+Fix: Use `torch.utils.data.TensorDataset` and `DataLoader` with a configurable batch size (default 32, matching the KASPER paper). Shuffle the training data each epoch.
+
+### 4. Add a learning rate scheduler
+
+The KASPER paper specifies `ReduceLROnPlateau` with `factor=0.7` and `patience=7`. Currently the code has no scheduler at all, meaning the optimizer may oscillate rather than converge late in training.
+
+Fix: Add `torch.optim.lr_scheduler.ReduceLROnPlateau` monitoring validation loss, with configurable `factor` and `scheduler_patience` parameters in the config dict.
+
+### 5. Fix the TKAN/Trainer dimension incompatibility
+
+`TKAN.forward` expects 3D input `(Batch, SeqLen, Features)` and calls `x_seq.size()` to unpack three dimensions. But `ModelTrainer.fit_fold` converts all data to 2D tensors `(N, Features)`. If a TKAN is ever passed to the trainer, it will crash immediately.
+
+Fix: Add a reshaping/windowing step in the trainer that detects when the model is a `TKAN` instance and reshapes the 2D feature matrix into a 3D sequence tensor using a configurable `seq_len` parameter. Alternatively, add a guard that raises a clear error if TKAN is used without proper 3D data.
+
+### 6. Replace the entropy regularization with something principled
+
+`_get_entropy_loss` treats absolute spline coefficient values as a probability distribution and penalizes their entropy. This is not standard in KAN literature and is mathematically questionable (absolute coefficient magnitudes are not probabilities). The KASPER paper achieves sparsity via L1 on spline coefficients and an attention-based sparsity mask.
+
+Fix: Either remove `_get_entropy_loss` entirely (since L1 via `_get_l1_loss` already promotes sparsity), or replace it with a group-lasso penalty (`torch.norm(coef, p=2, dim=-1).mean()`) that encourages entire basis functions to zero out. Add a clear comment explaining the rationale.
+
+### 7. Remove the redundant metric
+
+`metrics_history['val_loss']` and `metrics_history['val_neg_log_loss']` store the exact same value on lines 416-417.
+
+Fix: Either compute `val_loss` as the full loss including regularization terms (L1 + entropy + regime losses) for the validation set (which would be the proper distinct metric), or remove the duplicate key. If you keep both, they must represent different quantities.
+
+### 8. Switch from Adam to AdamW
+
+The KASPER paper uses AdamW (decoupled weight decay), not Adam with L2 regularization. In PyTorch, `optim.Adam(weight_decay=...)` applies L2 penalty to gradients, which is not equivalent to AdamW's decoupled formulation. For spline-based models where coefficient magnitudes matter, this distinction affects training.
+
+Fix: Change `optim.Adam` to `optim.AdamW` on the optimizer initialization line.
+
+### 9. Add probability calibration
+
+AFML Ch. 10 discusses bet sizing from predicted probabilities, which requires well-calibrated outputs. Currently, raw sigmoid outputs go directly to the backtester.
+
+Fix: Add a `calibrate` method to `ModelTrainer` that fits `sklearn.calibration.CalibratedClassifierCV` (isotonic regression) or a simple Platt scaling layer on the validation fold's predictions. Update `predict_proba` to apply calibration if available.
+
+### 10. Add normalization between PureKAN layers
+
+The MLP uses `BatchNorm1d` but PureKAN has no normalization at all. B-spline outputs can drift in magnitude across layers since the grid is fixed on [-1, 1] but intermediate activations are unbounded.
+
+Fix: Add `nn.LayerNorm(dim)` after each `KANLayer` in the `PureKAN` constructor (inside the loop that builds layers). This stabilizes deep KAN stacks.
+
+### 11. Add type hints and return annotations
+
+`_make_lags`, `_get_l1_loss`, `_get_entropy_loss`, and `fit_fold` all lack return type annotations. Since this file interfaces with the orchestrator notebook and the backtester, type hints matter for maintainability.
+
+Fix: Add proper return type annotations to all methods and functions.
+
+## Output Requirements
+
+- Return the complete, refactored `g_models.py` file
+- Keep all existing model architectures (KANLayer, PureKAN, TKAN, KASPER, MLPModel, SklearnBaseline) functional
+- Preserve the `.fit()` / `.predict_proba()` interface that the backtester (`9_backtester.py`) expects
+- Keep the AFML sample weighting logic in `weighted_neg_log_loss` intact
+- Do not introduce new external dependencies beyond what is already imported (sklearn, torch, numpy, xgboost)
+- Use clean, minimal comments that explain **why**, not **what**
+
+## The Code
+
+```python
+[PASTE YOUR g_models.py FILE HERE]
+```
