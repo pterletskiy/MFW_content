@@ -1,1 +1,108 @@
+# Prompt — Improvements to `c_econometrics.py`
 
+You are an expert Python developer specialising in financial machine learning and econometrics. I will provide you with a module called `c_econometrics.py` that implements econometric transformations for a Bitcoin forecasting pipeline strictly based on Marcos López de Prado's *Advances in Financial Machine Learning* (AFML). The module contains five core components: structural log transforms, Supremum ADF (SADF) bubble detection, Sub/Super-Martingale Test (SMT) bubble detection, Fixed-Width Window Fractional Differencing (FFD), and a pre-CV orchestrator.
+
+Your task is to **refactor and improve** the code according to the eight issues described below. Apply all changes directly to the code, preserve the existing API signatures (function names and return types), and keep the AFML methodology intact. Add brief inline comments wherever you make a non-trivial change.
+
+---
+
+## Issue 1 — Add ADF lags to the SADF specification (methodological fix)
+
+The current SADF implementation fits a simple regression `Δy_t = α + β·y_{t−1} + ε_t` with zero augmentation lags. AFML §17.4.2.6 (Snippet 17.1) shows that the SADF inner loop should accept a `lags` parameter and include lagged `Δy` terms in the design matrix to absorb serial correlation in the residuals. Without lags, the t-statistic can be inflated in the presence of autocorrelated errors.
+
+**Required changes:**
+- Add an optional `lags: int = 1` parameter to `compute_sadf_signal`.
+- Augment the design matrix inside the inner loop to include `lags` columns of lagged `Δy`.
+- Adjust the normal equation accumulators (`XtX`, `Xty`) and degrees of freedom accordingly.
+- Update the docstring to document the new parameter.
+
+---
+
+## Issue 2 — JIT-compile the SADF and SMT inner loops with Numba
+
+Both `compute_sadf_signal` and `compute_smt_signal` have tight double `for` loops in pure Python/NumPy that will be impractically slow on production-length series (thousands to tens of thousands of bars). AFML §17.4.2.2 explicitly discusses the heavy computational cost of SADF.
+
+**Required changes:**
+- Extract the core double-loop logic of each function into a helper decorated with `@numba.njit`.
+- Replace `np.linalg.pinv(XtX)` in the SADF loop with the analytical closed-form inverse of a 2×2 matrix: swap diagonals, negate off-diagonals, divide by determinant. This avoids calling a LAPACK routine inside a JIT-compiled function.
+- Keep the outer wrapper functions (with pandas I/O and logging) unchanged; only the inner numerical kernel needs to be JIT-compiled.
+- Add `import numba` at the top of the module.
+
+---
+
+## Issue 3 — Fix the O(n²) complexity claim in the SADF docstring
+
+The docstring currently states "Optimized O(n²) implementation." The outer loop runs `t` from `min_window` to `n`, and for each `t` the inner loop walks `t0` from `t−1` down to 0. This is O(n²) per outer step, making the total O(n³). The accumulator approach avoids rebuilding matrices from scratch (so the constant factor is better), but the asymptotic complexity is still cubic.
+
+**Required change:**
+- Correct the docstring to accurately state the complexity (O(n³) with reduced constant factor, or O(n²) if you manage to restructure the algorithm to avoid re-walking all start points per outer step).
+
+---
+
+## Issue 4 — Optimise the SMT inverse cache
+
+`compute_smt_signal` pre-allocates `XtX_inv_cache` of shape `(n+1, 2, 2)` and pre-computes the pseudo-inverse of `X.T @ X` for every window length from 3 to `n`. Most of those entries (from 3 to `min_window − 2`) are never used.
+
+**Required changes:**
+- Only compute and cache inverses for window lengths in the range `[min_window − 1, n]`.
+- For the polynomial trend cases (`poly1`, `poly2`), derive the closed-form `(X'X)^{-1}` analytically (the design matrix is `[ones, tau]` or `[ones, tau²]`, so the Gram matrix elements are sums of powers of integers, which have well-known formulas). This eliminates the `np.linalg.pinv` call entirely.
+
+---
+
+## Issue 5 — Replace `assert` with explicit `ValueError` in `get_weights_ffd`
+
+Line `assert 0 < d <= 1.0, "d must be in (0, 1]"` will be silently stripped when Python runs with `-O`. This is a production safety issue.
+
+**Required change:**
+- Replace with `if not (0 < d <= 1.0): raise ValueError("d must be in (0, 1]")`.
+
+---
+
+## Issue 6 — Avoid in-place mutation of `feature_metadata`
+
+`apply_structural_log` receives `feature_metadata` as a dict and mutates it in place, yet also returns it. This creates an ambiguous API contract. `df` is already copied defensively on the first line of the function.
+
+**Required changes:**
+- At the top of `apply_structural_log`, add `feature_metadata = dict(feature_metadata)` to create a shallow copy, making the function purely return-value based with no side effects.
+- Apply the same pattern inside `apply_continuous_econometrics`.
+
+---
+
+## Issue 7 — Parameterise hardcoded asset name in column names
+
+The SADF output column is hardcoded to `"BTC_SADF_Bubble_Signal"` and SMT outputs to `"BTC_SMT_{trend_type}_phi{phi}"`. This couples the module to a single asset.
+
+**Required changes:**
+- Add an optional `asset_prefix: str = "BTC"` parameter to `compute_sadf_signal`, `compute_smt_signal`, and `apply_continuous_econometrics`.
+- Compose column names dynamically using this prefix, e.g., `f"{asset_prefix}_SADF_Bubble_Signal"`.
+- Default to `"BTC"` so existing behaviour is preserved.
+
+---
+
+## Issue 8 — Add a minimal unit test suite
+
+There are currently no tests for the non-trivial mathematical algorithms.
+
+**Required changes:**
+- Create a companion file called `test_c_econometrics.py` using `pytest`.
+- Include at minimum the following tests:
+  1. `get_weights_ffd(1.0)` returns `np.array([1, -1])` (reshaped).
+  2. `get_weights_ffd(0.0)` returns `np.array([1.0])` (reshaped).
+  3. `frac_diff_ffd` applied to a constant series returns all-zero (or near-zero) values after the warm-up window.
+  4. `find_optimal_d` on a white-noise series returns `d* = 0.0`.
+  5. `compute_sadf_signal` on a synthetic exponentially growing series produces at least some positive SADF values beyond `min_window`.
+  6. `apply_structural_log` does not modify columns tagged as `"bounded_oscillator"` and does transform columns tagged `"raw_level"`.
+  7. Verify that `feature_metadata` passed into `apply_structural_log` is **not** mutated (after Issue 6 is applied).
+
+---
+
+## Additional constraints
+
+- Preserve all existing function signatures and return types (add only optional parameters).
+- Keep all AFML methodology references in the docstrings.
+- Maintain the `.shift(1)` look-ahead bias prevention on SADF and SMT outputs.
+- Do not call `find_optimal_d` inside `apply_continuous_econometrics` (it must remain deferred to the CV loop).
+- Use type hints throughout any new code.
+- Follow PEP 8 and keep line length ≤ 88 characters (Black formatter style).
+
+Please output the full refactored `c_econometrics.py` and the new `test_c_econometrics.py`.
