@@ -1,6 +1,0 @@
-BTC Price Direction Project
-
-I am doing a Master's Final Work which consists of making an ML model which predicts BTC's price direction. 
-My idea is using daily data (OHLCV, Macro and On-chain) to feed the models. 
-The retrieved data is then preprocessed and engineered using Financial Machine Learning methodologies. 
-Finally, a Kolmogorov Arnold Network is developed to predict price predictions and compared against benchmarks.
