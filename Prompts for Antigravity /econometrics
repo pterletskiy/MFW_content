@@ -2,7 +2,7 @@
 
 You are an expert Python developer specialising in financial machine learning and econometrics. I will provide you with a module called `c_econometrics.py` that implements econometric transformations for a Bitcoin forecasting pipeline strictly based on Marcos López de Prado's *Advances in Financial Machine Learning* (AFML). The module contains five core components: structural log transforms, Supremum ADF (SADF) bubble detection, Sub/Super-Martingale Test (SMT) bubble detection, Fixed-Width Window Fractional Differencing (FFD), and a pre-CV orchestrator.
 
-Your task is to **refactor and improve** the code according to the eight issues described below. Apply all changes directly to the code, preserve the existing API signatures (function names and return types), and keep the AFML methodology intact. Add brief inline comments wherever you make a non-trivial change.
+Your task is to **refactor and improve** the code according to the seven issues described below. Apply all changes directly to the code, preserve the existing API signatures (function names and return types), and keep the AFML methodology intact. Add brief inline comments wherever you make a non-trivial change.
 
 ---
 
@@ -79,23 +79,6 @@ The SADF output column is hardcoded to `"BTC_SADF_Bubble_Signal"` and SMT output
 
 ---
 
-## Issue 8 — Add a minimal unit test suite
-
-There are currently no tests for the non-trivial mathematical algorithms.
-
-**Required changes:**
-- Create a companion file called `test_c_econometrics.py` using `pytest`.
-- Include at minimum the following tests:
-  1. `get_weights_ffd(1.0)` returns `np.array([1, -1])` (reshaped).
-  2. `get_weights_ffd(0.0)` returns `np.array([1.0])` (reshaped).
-  3. `frac_diff_ffd` applied to a constant series returns all-zero (or near-zero) values after the warm-up window.
-  4. `find_optimal_d` on a white-noise series returns `d* = 0.0`.
-  5. `compute_sadf_signal` on a synthetic exponentially growing series produces at least some positive SADF values beyond `min_window`.
-  6. `apply_structural_log` does not modify columns tagged as `"bounded_oscillator"` and does transform columns tagged `"raw_level"`.
-  7. Verify that `feature_metadata` passed into `apply_structural_log` is **not** mutated (after Issue 6 is applied).
-
----
-
 ## Additional constraints
 
 - Preserve all existing function signatures and return types (add only optional parameters).
@@ -105,4 +88,4 @@ There are currently no tests for the non-trivial mathematical algorithms.
 - Use type hints throughout any new code.
 - Follow PEP 8 and keep line length ≤ 88 characters (Black formatter style).
 
-Please output the full refactored `c_econometrics.py` and the new `test_c_econometrics.py`.
+Please output the full refactored `c_econometrics.py`.
