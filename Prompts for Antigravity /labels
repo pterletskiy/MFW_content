@@ -1,0 +1,77 @@
+You are an expert Python developer specializing in financial machine learning. I will provide you with my module `d_labels.py`, which implements Marcos López de Prado's Triple-Barrier Method (TBM) and sample weighting logic from "Advances in Financial Machine Learning" (Chapters 3 and 4). This module sits inside a larger pipeline (upstream of a Combinatorial Purged K-Fold cross-validation step).
+
+I need you to rewrite and improve this module by applying ALL of the following changes. Do not skip any. Preserve the existing structure and docstring quality, and keep every function that already exists (you may refactor internals, but do not remove public APIs).
+
+=== IMPROVEMENT 1: ADD TIME-DECAY FACTORS (AFML Chapter 4.7, Snippet 4.11) ===
+The current code computes return-attributed sample weights but never applies time-decay. Implement a function `getTimeDecay(tW: pd.Series, clfLastW: float = 1.0)` following López de Prado's piecewise-linear decay over cumulative uniqueness (not chronological time). The decay parameter `c` should control behavior:
+  - c = 1 means no decay.
+  - 0 < c < 1 means weights decay linearly but remain positive.
+  - c = 0 means weights converge linearly to zero for the oldest observations.
+  - c < 0 means the oldest portion of observations receive zero weight.
+Integrate this into `getSampleWeights` and expose the `c` parameter in `run_labels` with a default of 1 (no decay).
+
+=== IMPROVEMENT 2: ADD SEQUENTIAL BOOTSTRAP (AFML Chapter 4.5, Snippet 4.8) ===
+The standard bootstrap grossly oversamples when labels overlap. Implement a function `seqBootstrap(t1: pd.Series, numSamples: int = None, random_state: int = None)` that draws samples proportional to their average uniqueness. The function should:
+  - Build the indicator matrix mapping each label's lifespan to the index.
+  - At each draw, compute the average uniqueness of each remaining candidate given the already-selected samples.
+  - Sample the next observation with probability proportional to its average uniqueness.
+  - Return a list of selected indices.
+Also implement the helper `getIndMatrix(barIx, t1)` that builds the binary indicator matrix. Export the sequential bootstrap indices from `run_labels` in the returned dict under the key `'seqBootstrapIdx'`.
+
+=== IMPROVEMENT 3: FIX getBins ZERO-LABEL LOGIC ===
+Currently, `getBins` creates a ternary label {-1, 0, 1} by masking near-zero returns (below 50% of the dynamic target). This conflicts with AFML's recommendation to drop neutral labels rather than create a three-class problem, because the return-attribution weighting (abs(ret) * uniqueness) systematically underweights the labels you are trying to keep. Fix this by:
+  - Replacing the 0-mask with a `dropLabels` parameter (default True).
+  - When `dropLabels=True`, remove rows where |ret| < trgt * minPctLabel (expose `minPctLabel` as a parameter, default 0.0 to keep backward compatibility, but document that AFML recommends dropping).
+  - When `dropLabels=False`, keep the current ternary behavior but add a logged warning that this deviates from AFML.
+  - Propagate any dropped indices back to `run_labels` so that `events`, `bins`, and `sampleWeights` stay aligned.
+
+=== IMPROVEMENT 4: FIX MUTABLE DEFAULT ARGUMENT ===
+In `run_labels`, the parameter `ptSl: list = [1, 1]` uses a mutable default. Replace it with `ptSl: list = None` and set `if ptSl is None: ptSl = [1, 1]` inside the function body. Apply the same fix anywhere else a mutable default appears.
+
+=== IMPROVEMENT 5: OPTIMIZE MULTIPROCESSING MEMORY ===
+The current `ProcessPoolExecutor` duplicates large DataFrames (close, events) into every worker. Since the worker functions are pandas/numpy-bound (which release the GIL), replace `ProcessPoolExecutor` with `ThreadPoolExecutor` as the default, but keep a `useProcesses: bool = False` flag in `mpPandasObj` so the caller can switch back if needed. Update all calls accordingly.
+
+=== IMPROVEMENT 6: VECTORIZE VERTICAL BARRIER LOOP ===
+In `run_labels`, the vertical barrier assignment (lines 521-526 in original) loops over every event and scans the full close index each time, making it O(n*m). Replace this with a vectorized approach using `close.index.searchsorted(tEvents + tdelta, side='left')` and clip to `len(close.index) - 1`. This should be a single vectorized operation, no Python loop.
+
+=== IMPROVEMENT 7: FIX INTERIM SAVING LOGIC ===
+Lines 557-558 in the original have a bug: `events.to_frame() if isinstance(events, pd.Series) else events.to_parquet(...)` silently discards the `.to_frame()` result when events is a Series (it never calls `.to_parquet()` on it). Replace with an explicit if/else block that writes correctly in both branches:
+```python
+if isinstance(events, pd.Series):
+    events.to_frame().to_parquet(out_dir / "events.parquet")
+else:
+    events.to_parquet(out_dir / "events.parquet")
+```
+Apply the same fix for `bins`.
+
+=== IMPROVEMENT 8: ADD LABEL DISTRIBUTION LOGGING ===
+After `getBins` is called in `run_labels`, log the distribution of the `bin` column. Something like:
+```python
+label_counts = bins['bin'].value_counts().sort_index()
+logger.info("LABELING STATS: Label distribution:\n%s", label_counts.to_string())
+```
+Also add a warning if any class represents less than 10% of the total, since extreme imbalance will degrade classifier performance.
+
+=== IMPROVEMENT 9: FIX TYPO ===
+Line 454: `"Inifinities"` should be `"Infinities"`.
+
+=== IMPROVEMENT 10: MAKE mpPandasObj DISPATCH LESS BRITTLE ===
+The current convention where `pdObj` is a tuple with `pdObj[0]` as the partitionable index and `pdObj[1:]` as positional args is implicit and error-prone. Refactor this so that:
+  - `mpPandasObj` accepts `func`, `atoms` (the partitionable index), `*args` (positional args forwarded to the worker before the molecule), `numThreads`, `useProcesses`, and `**kwargs`.
+  - The tuple packing/unpacking is removed from all call sites.
+  - Update all callers (`getEvents`, `getAvgUniqueness`, `getSampleWeights`) to use the new signature.
+
+=== IMPROVEMENT 11: ADD CLASS WEIGHTS NOTE ===
+Add a brief docstring note in `getBins` referencing AFML Chapter 4.8, reminding that downstream classifiers should use `class_weight='balanced'` or `'balanced_subsample'` to handle any residual imbalance.
+
+=== CONSTRAINTS ===
+- Keep the module self-contained (no new external dependencies beyond numpy, pandas, and standard library).
+- Preserve all existing function names as public API (you may add new functions).
+- Keep comprehensive numpy-style docstrings on every function.
+- Use Python type hints throughout.
+- Follow PEP 8 naming for any NEW functions you create, but preserve the existing camelCase names for backward compatibility. Add PEP 8 aliases (e.g., `get_daily_vol = getDailyVol`) at the bottom of the module.
+- Include a module-level changelog comment at the top listing all improvements made.
+
+Here is the full code of d_labels.py:
+
+[PASTE YOUR d_labels.py CODE HERE]
