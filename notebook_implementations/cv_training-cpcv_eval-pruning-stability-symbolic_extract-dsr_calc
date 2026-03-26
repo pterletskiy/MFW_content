@@ -1,1 +1,556 @@
+# Prompt: Notebook Phase 3 — Inner-CV Loop → Symbolic Extraction → DSR (Blocks 10–18)
 
+## Context
+
+I'm building a report-style Jupyter notebook (`MFW_Pipeline.ipynb`) for a
+KAN-based BTC direction prediction pipeline following Marcos López de Prado's
+AFML methodology.
+
+**Phases 1–2 (Blocks 0–9) are complete.** At the end of Phase 2, the
+notebook has these variables in scope:
+
+- `df`: DataFrame with all engineered features + raw OHLCV + SADF/SMT
+  signals. Index is UTC DatetimeIndex.
+- `feature_metadata`: dict mapping feature name → tag (`log_level`,
+  `ratio`, `bounded_oscillator`, `zero_centered`, `cyclical`, `event_time`,
+  `target_tracking`). The `target_tracking` tag is on `Raw_Close` only.
+- `events`: DataFrame indexed by t0, columns `['t1', 'trgt', 'side']`.
+- `bins`: DataFrame indexed by t0, columns `['ret', 'bin']` where
+  `bin ∈ {-1, +1}` (neutrals dropped).
+- `weights`: Series of uniqueness × return-attributed sample weights.
+- `t1`: Series mapping t0 → t1 (barrier touch time).
+- `pkf`: `PurgedKFold(n_splits=6, t1=t1, pct_embargo=0.01)`.
+- `cpcv`: `CombinatorialPurgedKFold(n_splits=6, n_test_splits=2, ...)`.
+- `cv_splits`: list of `(train_idx, test_idx)` from `pkf.split(df)`.
+
+**Your task: write Blocks 10–18.** This is the core of the pipeline.
+
+---
+
+## Source Files Attached
+
+Read all six `.py` files carefully for exact signatures and return types:
+
+- `c_econometrics.py` — `find_optimal_d(series) → (d*, ffd_series, corr)`,
+  `frac_diff_ffd(series, d) → Series`
+- `d_labels.py` — already called in Phase 2, but `bins` alignment matters
+- `e_cv.py` — `PurgedKFold`, `CombinatorialPurgedKFold` (already instantiated)
+- `f_preproc.py` — `fit_transform_scaler(X_train, X_test, scaler_type,
+  feature_range) → (X_train_scaled, X_test_scaled, scaler, dropped_cols)`,
+  `compute_SFI(X_train, y_train, X_test, y_test, clf, ...) → DataFrame`,
+  `filter_features(X_train, X_test, sfi_scores, threshold, baseline) →
+  (X_train_filtered, X_test_filtered, kept_features, sfi_kept)`
+- `g_models.py` — `PureKAN(in_features, layer_dims, grid_size, k)`,
+  `TKAN(...)`, `KASPER(...)`, `MLPModel(in_features, hidden_dim, dropout)`,
+  `SklearnBaseline(clf_type, config)`, `ARLogistic(config)`,
+  `ModelTrainer(model, config)` with `.fit_fold(X_tr, y_tr, w_tr, X_val,
+  y_val, w_val)`, `.calibrate(X_cal, y_cal)`, `.predict_proba(X)`,
+  `.get_fold_metrics()`
+- `h_kan_math_expression.py` — `extract_symbolic_expression(kan_model,
+  feature_names, ...) → dict`, `evaluate_symbolic_fidelity(pruned_model,
+  X_val, y_val) → dict`, `export_latex(expr) → str`,
+  `save_expressions(expr, path)`, `print_trading_equations(expr) → str`,
+  `compute_feature_importance(expr, feature_names) → dict`
+
+---
+
+## Design Rules (same as Phases 1–2)
+
+1. **Report tone.** Markdown cells = research report sections.
+2. **Comments for the non-obvious only.** No padding language.
+3. **Every cell produces visible output.**
+4. **Logging already configured** from Block 0.
+
+---
+
+## CRITICAL: Data Leakage Prevention Architecture
+
+The inner-CV loop is where leakage kills financial ML projects. The prompt
+below specifies a strict ordering. **Do not reorder these steps.** Each step
+documents exactly what is fitted where and why.
+
+### The Leakage-Free Data Flow
+
+```
+For each PurgedKFold fold:
+  1. SPLIT:     df → X_train_raw, X_test_raw (positional indices from pkf)
+                Align with bins/weights via index intersection (not position)
+  2. FFD:       find_optimal_d on X_train ONLY → apply d* to both folds
+  3. SCALE:     fit_transform_scaler on X_train ONLY → transform both folds
+  4. SFI:       compute_SFI on (X_train, y_train, X_val_inner, y_val_inner)
+                where X_val_inner is a temporal slice of X_train (last 20%)
+  5. FILTER:    filter_features using SFI scores → reduce both folds
+  6. BASELINES: train on X_train, evaluate on X_test
+  7. KAN:       train on X_train, evaluate on X_test
+  8. CALIBRATE: fit calibrator on held-out portion of X_train (last 20%)
+  9. THRESHOLD: tune on validation partition, apply unchanged to X_test
+  10. LOG:      record everything to trial_registry
+```
+
+**Things that MUST NOT happen:**
+- FFD d* fitted on full dataset or on test fold
+- Scaler fitted on test fold or full dataset
+- SFI computed using test fold features or labels
+- Feature selection influenced by test fold data
+- Calibrator fitted on test fold
+- Threshold tuned on test fold
+- Any transform that sees future observations relative to the training fold
+
+---
+
+## Block 10 — Inner-CV Loop: Preprocessing (FFD, Scaling, Feature Selection)
+
+This is the first half of the inner-CV loop. It handles everything up to
+but not including model training.
+
+### Markdown Cell
+
+Explain: everything inside this loop is behind the CV-Wall. Each transform
+is fitted exclusively on the purged/embargoed training fold. The test fold
+is transformed using parameters learned from training data only. This block
+handles three steps: (1) Fractional Differentiation of non-stationary
+features, (2) robust scaling to the [-1, 1] range required by KAN B-spline
+grids, and (3) Single Feature Importance for feature selection.
+
+### Code Requirements
+
+```python
+# Master containers for all fold results
+trial_registry = []
+fold_preprocessed = {}  # Store per-fold preprocessed data for reuse
+
+feature_cols = [c for c in feature_metadata
+                if feature_metadata[c] not in ('target_tracking',)]
+
+# Identify which features need FFD (log_level tag from econometrics step)
+ffd_candidates = [c for c, tag in feature_metadata.items() if tag == 'log_level']
+
+for fold_idx, (train_idx, test_idx) in enumerate(cv_splits):
+    print(f"\n{'='*60}")
+    print(f"  FOLD {fold_idx}")
+    print(f"{'='*60}")
+
+    # ── Step 1: SPLIT with index alignment ──
+    # The train_idx/test_idx are POSITIONAL indices into df.
+    # But bins/weights are indexed by t0 timestamps, not positions.
+    # We must intersect df.index[train_idx] with bins.index to get
+    # only the rows that have labels.
+
+    train_dates = df.index[train_idx]
+    test_dates = df.index[test_idx]
+
+    # Align: only keep dates that exist in both df and bins
+    train_labeled = train_dates[train_dates.isin(bins.index)]
+    test_labeled = test_dates[test_dates.isin(bins.index)]
+
+    X_train_raw = df.loc[train_labeled, feature_cols].copy()
+    X_test_raw = df.loc[test_labeled, feature_cols].copy()
+    y_train = bins.loc[train_labeled, 'bin'].copy()
+    y_test = bins.loc[test_labeled, 'bin'].copy()
+    w_train = weights.loc[train_labeled].copy()
+    w_test = weights.loc[test_labeled].copy()
+```
+
+**Important:** the label remapping from {-1, +1} to {0, 1} must happen here
+for the binary cross-entropy loss. Map: -1 → 0, +1 → 1. Document this
+clearly. This is the three-class-to-binary reduction point.
+
+```python
+    # Remap labels: TBM produces {-1, +1}, models expect {0, 1}
+    y_train = y_train.map({-1: 0, 1: 1})
+    y_test = y_test.map({-1: 0, 1: 1})
+```
+
+**Step 2: FFD** — For each `ffd_candidate` column:
+- Call `find_optimal_d(X_train_raw[col])` to get `d*` on training fold only.
+- Call `frac_diff_ffd(X_train_raw[col], d*)` and
+  `frac_diff_ffd(X_test_raw[col], d*)` to transform both folds.
+- Replace the original column with the FFD version in both X_train and X_test.
+- Drop the warm-up NaN rows created by the FFD filter width.
+- Re-align y_train, y_test, w_train, w_test after dropping rows.
+- Log d* and correlation for each column.
+- Print a summary table: column, d*, correlation with original, ADF p-value.
+
+**Step 3: Scaling** — Call `fit_transform_scaler`:
+```python
+    X_train_scaled, X_test_scaled, scaler, dropped_cols = fit_transform_scaler(
+        X_train_ffd, X_test_ffd, scaler_type='robust', feature_range=(-1.0, 1.0)
+    )
+```
+- Print: number of features dropped by scaler (zero-variance post-FFD),
+  achieved min/max bounds on training fold.
+
+**Step 4: SFI Feature Selection** — Split training fold into
+train_inner (first 80%) and val_inner (last 20%) *chronologically*
+(no shuffling). Use val_inner for SFI scoring:
+```python
+    split_point = int(len(X_train_scaled) * 0.80)
+    X_tr_inner = X_train_scaled.iloc[:split_point]
+    X_val_inner = X_train_scaled.iloc[split_point:]
+    y_tr_inner = y_train.iloc[:split_point]
+    y_val_inner = y_train.iloc[split_point:]
+
+    sfi_clf = LogisticRegression(class_weight='balanced', max_iter=1000)
+    sfi_scores = compute_SFI(
+        X_tr_inner, y_tr_inner, X_val_inner, y_val_inner,
+        clf=sfi_clf, scoring='neg_log_loss'
+    )
+```
+- Compute a dummy classifier baseline score for the filter threshold:
+  use the negative log-loss of always predicting the class prior.
+- Call `filter_features` with `baseline=dummy_score`.
+- Print: how many features survived, which were dropped, their SFI scores.
+- Store the preprocessed data in `fold_preprocessed[fold_idx]`.
+
+---
+
+## Block 11 — Inner-CV Loop: Baseline Training
+
+Train all required baselines on the preprocessed folds from Block 10.
+
+### Baselines to Train (per fold)
+
+For each baseline, use the FULL training fold (not the 80% inner split).
+The 80/20 split was only for SFI; models see all training data.
+
+| Baseline | Class | Config |
+|---|---|---|
+| AR Logistic | `ARLogistic({'lags': 1})` | Autoregressive control |
+| Logistic Regression | `SklearnBaseline('logistic', {'C': 1.0})` | Linear calibrated baseline |
+| Random Forest | `SklearnBaseline('rf', {'n_estimators': 500})` | Nonlinear ensemble |
+| XGBoost | `SklearnBaseline('xgb', {'n_estimators': 200, 'max_depth': 3})` | Gradient boosting |
+| MLP | `MLPModel(n_features, 64, 0.2)` via `ModelTrainer` | Neural network baseline |
+
+For each baseline:
+- Call `.fit(X_train.values, y_train.values, sample_weight=w_train.values)`
+  (for sklearn baselines) or `.fit_fold(...)` (for MLP via ModelTrainer).
+- For MLP, use the 80/20 chronological split for early stopping validation.
+- Call `.predict_proba(X_test.values)` to get test predictions.
+- Compute and store: AUC, F1, Brier score, log-loss.
+- Log each result to `trial_registry`.
+
+Print a per-fold baseline comparison table after all baselines complete.
+
+---
+
+## Block 12 — Inner-CV Loop: KAN Training
+
+Train the KAN architecture grid on each fold.
+
+### Architecture Grid
+
+| ID | Shape | Grid | k | Notes |
+|---|---|---|---|---|
+| K1 | `[F, 4, 1]` | 5 | 3 | Narrow 1-hidden |
+| K2 | `[F, 8, 1]` | 5 | 3 | Wide 1-hidden |
+| K3 | `[F, 4, 4, 1]` | 5 | 3 | Narrow 2-hidden |
+| K4 | `[F, 8, 4, 1]` | 5 | 3 | Wide 2-hidden |
+
+Where `F` = number of surviving features after SFI filtering.
+
+### Per Architecture
+
+- Instantiate `PureKAN(F, layer_dims, grid_size=5, k=3)`.
+- Wrap in `ModelTrainer(model, config)` with config:
+  ```python
+  kan_config = {
+      'steps': 200, 'lr': 1e-3, 'batch_size': 32,
+      'lamb_1': 1e-4, 'lamb_group': 1e-3,
+      'patience': 20, 'weight_decay': 1e-5,
+  }
+  ```
+- Use the 80/20 chronological split of the training fold for early stopping:
+  train on the first 80%, validate on the last 20%.
+  **This validation partition is from training data only. The test fold is
+  never seen during training or early stopping.**
+- Call `trainer.fit_fold(X_tr_inner, y_tr_inner, w_tr_inner, X_val_inner, y_val_inner, w_val_inner)`.
+- After training, evaluate on the **test fold** (X_test, y_test).
+- Compute: AUC, F1, Brier, log-loss on test fold.
+- Log to `trial_registry` with architecture ID, fold index, all metrics.
+- Save the best KAN checkpoint per fold (by validation AUC during training):
+  `torch.save(model.state_dict(), f'models/kan_{arch_id}_fold{fold_idx}.pt')`.
+
+Print a per-fold KAN comparison table (K1–K4 side by side).
+
+---
+
+## Block 13 — Inner-CV Loop: Calibration & Threshold Tuning
+
+After selecting the best KAN per fold (by validation AUC across K1–K4):
+
+### Calibration
+
+- Carve out the **last 20% of the training fold** as a calibration set.
+  This is the same val_inner used for early stopping, but calibration is
+  fitted AFTER training is complete.
+  **The test fold is never used for calibration.**
+- Call `trainer.calibrate(X_val_inner.values, y_val_inner.values)`.
+- This fits an isotonic regression mapping raw sigmoid outputs to calibrated
+  probabilities.
+
+### Threshold Tuning
+
+- Grid search thresholds from 0.30 to 0.70 in steps of 0.01.
+- Evaluate F1 on `X_val_inner` (the calibration partition of training data).
+- Select the threshold with the highest validation F1.
+- Apply this threshold unchanged to the test fold.
+  **Never tune the threshold on test data.**
+
+### Final Test Evaluation
+
+- Get calibrated probabilities on test fold:
+  `calibrated_test_probs = trainer.predict_proba(X_test.values)[:, 1]`
+- Apply the tuned threshold to get hard predictions.
+- Compute final metrics: AUC, F1, Brier, log-loss, accuracy.
+- Compute the annualized Sharpe ratio of a strategy that goes
+  long when prediction=1 and short when prediction=0, using daily
+  log returns from `bins.loc[test_labeled, 'ret']`.
+- Log everything to `trial_registry`.
+
+**End of the inner-CV for-loop.** Close the loop here.
+
+---
+
+## Block 14 — CV Results Aggregation
+
+After the loop completes, aggregate and display results.
+
+### Requirements
+
+- Save `trial_registry` to `models/trial_registry.json`.
+- Print a summary table: one row per (model_type, architecture_id),
+  columns = mean AUC, std AUC, mean F1, mean SR across folds.
+- Highlight the best model by median AUC across folds.
+- Plot: AUC by fold for KAN vs each baseline (grouped bar chart).
+- Plot: training loss curves for the best KAN architecture across folds
+  (from `trainer.get_fold_metrics()`).
+- Select the best KAN architecture: the one with the highest **median**
+  validation AUC across folds. Store its ID and fold checkpoints.
+
+---
+
+## Block 15 — Pruning & Function Stability Check
+
+Post-CV analysis on the best KAN architecture.
+
+### Pruning (not available via efficient-kan, so describe the protocol)
+
+Since `PureKAN` uses the efficient-kan `KANLayer` (not pykan), pruning is
+done by zeroing out spline coefficients below a threshold:
+
+```python
+# For each KANLayer in the model:
+#   mask = torch.abs(layer.coef) < prune_threshold
+#   layer.coef.data[mask] = 0.0
+```
+
+- Set `prune_threshold = 0.01`.
+- After pruning, fine-tune for 50 steps at lr=5e-4 on the training fold.
+- Check: if validation AUC drops by more than 0.02 relative to pre-pruned
+  model, loosen threshold to 0.005 and retry.
+- Print: fraction of coefficients zeroed, AUC before/after pruning.
+
+### Function Stability Check
+
+- Load the best KAN architecture from each of the 6 fold checkpoints.
+- For each fold's model, extract the spline activation functions via
+  `model.get_activation_functions()`.
+- For the top 3 features (by SFI score), plot the learned spline curves
+  across all 6 folds overlaid on the same axes.
+- If the spline shapes change qualitatively across folds (e.g., monotonic
+  in fold 0 but non-monotonic in fold 3), flag this as regime dependence
+  in the printed output. This is a valid scientific finding, not a failure.
+
+---
+
+## Block 16 — Symbolic Extraction (`h_kan_math_expression.py`)
+
+Extract interpretable mathematical formulas from the best KAN.
+
+### Prerequisites Check
+
+Print a checklist before proceeding:
+- [ ] Best KAN AUC ≥ Logistic Regression baseline AUC (pass/fail)
+- [ ] Pruning complete (pass/fail)
+- [ ] Function stability assessed (pass/fail)
+
+If any prerequisite fails, print a warning but proceed anyway (the
+extraction is still informative, just not claimable as the thesis result).
+
+### Extraction
+
+- Select the fold whose validation AUC is closest to the **median** across
+  folds. This gives the most representative model.
+- Load that fold's pruned checkpoint.
+- Call `extract_symbolic_expression`:
+  ```python
+  expr = extract_symbolic_expression(
+      kan_model=pykan_model,  # NOTE: requires PyKAN model, see below
+      feature_names=kept_features,
+      lib=["x", "x^2", "x^3", "log", "exp", "tanh", "abs", "sqrt"],
+      finetune_epochs=30,
+      finetune_lr=0.0004,
+      X_train=X_train_filtered,
+      y_train=y_train,
+      r2_threshold=0.90,
+  )
+  ```
+
+**Important compatibility note:** `extract_symbolic_expression` expects a
+**PyKAN** model (from the `kan` library), not the efficient-kan `PureKAN`
+defined in `g_models.py`. The notebook must either:
+(a) Train a PyKAN model in parallel for the symbolic extraction fold, or
+(b) Convert the efficient-kan checkpoint to PyKAN format.
+
+Document whichever approach is used. If (a), the PyKAN model must be trained
+on exactly the same data, features, and fold as the efficient-kan model
+being symbolified. Add a comment explaining why two libraries are involved.
+
+### Fidelity Tests
+
+After extraction, run the fidelity checks:
+- Call `evaluate_symbolic_fidelity(pruned_model, X_test, y_test)`.
+- Compare symbolic AUC to the original KAN AUC on the same test fold.
+- Print pass/fail for each criterion:
+  | Test | Criterion |
+  |---|---|
+  | AUC parity | AUC(symbolic) ≥ AUC(KAN) - 0.03 |
+  | Rank correlation | Spearman ρ(symbolic probs, KAN probs) ≥ 0.95 |
+
+### Output
+
+- Call `print_trading_equations(expr)` to display the formula.
+- Call `export_latex(expr)` and print the LaTeX string.
+- Call `save_expressions(expr, 'models/symbolic_formula.json')`.
+- Call `compute_feature_importance(expr, kept_features)` and display
+  as a horizontal bar chart.
+
+---
+
+## Block 17 — Regime Generalization Test
+
+Test whether the symbolic formula generalizes across market regimes.
+
+### Protocol
+
+- The test fold from the median-AUC fold is split into two sub-regimes
+  using the SADF signal:
+  - **Explosive regime:** observations where SADF > SADF's 75th percentile
+    on the training fold.
+  - **Stable regime:** all other observations.
+- Evaluate the symbolic formula's AUC on each sub-regime separately.
+- Compare to the full test-fold AUC.
+- Print a table:
+  | Regime | N observations | AUC | vs Full AUC |
+- If AUC drops by more than 0.10 in either regime, print a warning that
+  the formula is regime-specific. This is a valid finding for the thesis.
+
+---
+
+## Block 18 — Deflated Sharpe Ratio & Final Report
+
+### DSR Computation
+
+The DSR corrects the Sharpe ratio for the number of configurations tested.
+
+- Count N = total entries in `trial_registry` (every model × architecture
+  × fold combination counts as one trial).
+- Compute the variance of SR estimates across all trials.
+- Compute DSR using the formula from skill_mldp_pipeline.md §10.2:
+  ```python
+  from scipy.stats import norm
+
+  gamma = 0.5772156649  # Euler-Mascheroni constant
+  sr_trials = [t['sharpe_ratio'] for t in trial_registry if 'sharpe_ratio' in t]
+  N = len(sr_trials)
+  var_sr = np.var(sr_trials)
+
+  sr_star = np.sqrt(var_sr) * (
+      (1 - gamma) * norm.ppf(1 - 1/N) +
+      gamma * norm.ppf(1 - 1/(N * np.e))
+  )
+
+  # PSR of the best strategy relative to sr_star benchmark
+  best_sr = max(sr_trials)
+  psr_dsr = norm.cdf((best_sr - sr_star) / (np.std(sr_trials) / np.sqrt(N)))
+  ```
+- Print: N trials, best SR, SR*, DSR value, pass/fail (DSR > 0.95).
+
+### Final Summary Table
+
+Print a single comprehensive table:
+
+| Metric | Best KAN | LogReg | RF | XGB | MLP |
+|---|---|---|---|---|---|
+| Median AUC (across folds) | | | | | |
+| Median F1 | | | | | |
+| Median Brier | | | | | |
+| Median SR | | | | | |
+| DSR | (computed) | — | — | — | — |
+| Symbolic formula extracted | Yes/No | — | — | — | — |
+| Regime generalization | Pass/Fail | — | — | — | — |
+
+### Save Final Artefacts
+
+- `models/trial_registry.json` (already saved in Block 14, verify)
+- `models/symbolic_formula.json` (already saved in Block 16)
+- `models/backtest_stats.json` containing per-fold SR, AUC, F1 for
+  the best KAN and all baselines
+- `models/regime_fidelity.json` with sub-regime AUC results
+
+---
+
+## Implementation Notes
+
+1. **The inner loop is long.** Add progress prints at each major step
+   (FFD complete, scaling complete, SFI complete, baseline X trained,
+   KAN K1 trained, etc.) with elapsed wall-clock time.
+
+2. **Checkpoint saving inside the loop.** Save model checkpoints and the
+   trial registry incrementally (after each fold completes), not just at
+   the end. If the kernel crashes at fold 4, you don't want to lose
+   folds 0–3.
+
+3. **Memory management.** After each fold completes, delete large tensors
+   and call `torch.cuda.empty_cache()` if using GPU. Daily BTC data is
+   small enough that this shouldn't be critical, but it's good practice.
+
+4. **Reproducibility.** At the top of Block 10, before the loop, set:
+   ```python
+   import random
+   SEED = 42
+   random.seed(SEED)
+   np.random.seed(SEED)
+   torch.manual_seed(SEED)
+   if torch.cuda.is_available():
+       torch.cuda.manual_seed_all(SEED)
+       torch.backends.cudnn.deterministic = True
+   ```
+
+5. **The val_inner partition.** The last 20% of the training fold is used
+   for three purposes: (a) SFI scoring, (b) early stopping during KAN
+   training, (c) calibration after training. These are sequential uses of
+   the same held-out data. This is acceptable because: SFI uses a simple
+   logistic regression that doesn't influence the KAN's weights; early
+   stopping only decides *when* to stop, not *what* the model learns; and
+   calibration is a post-hoc monotonic mapping. If you want stricter
+   separation, split into three partitions (60/15/5/20), but with ~2000
+   training observations this may be too aggressive.
+
+6. **PyKAN vs efficient-kan.** Your `g_models.py` implements `PureKAN`
+   using a custom `KANLayer` (efficient-kan style). Your
+   `h_kan_math_expression.py` expects a PyKAN `KAN` object with
+   `.symbolic_fun`, `.prune()`, `.auto_symbolic()`, `.use_symbolic()`
+   methods. These are two different libraries. The notebook must handle
+   this. The cleanest approach: train with efficient-kan (fast), then
+   for the single symbolic extraction fold, re-train a PyKAN model on
+   the same preprocessed data. Document this discrepancy and verify that
+   the PyKAN model achieves similar AUC before extracting symbols.
+
+## Output
+
+Produce the notebook cells for Blocks 10–18, each preceded by a markdown
+header cell. Format them ready to paste into Jupyter. Match the established
+style (clean, report-quality, no padding language).
+
+Attach all six `.py` files when sending this prompt.
