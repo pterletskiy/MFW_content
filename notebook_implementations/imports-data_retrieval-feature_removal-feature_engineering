@@ -1,1 +1,262 @@
+# Prompt: Notebook Roadmap + Phase 1 Implementation (Imports → Feature Engineering)
 
+## Context
+
+I'm building a KAN (Kolmogorov-Arnold Network) to predict BTC's daily price
+direction. The project follows Marcos López de Prado's AFML methodology.
+
+The codebase is modular: all heavy logic lives in `src/` Python files. The
+notebook is a **report-style orchestrator** that calls into these modules,
+displays diagnostics, and documents every decision. Think of it as a
+reproducible research report where each cell block tells a chapter of the
+story: what was done, why, and what the output looks like.
+
+I'm building the notebook in phases. This prompt covers **Phase 1 only**
+(Blocks 0–4). But first, I need a full roadmap so the notebook structure is
+planned end-to-end before any code is written.
+
+---
+
+## Task 1: Create `notebook_roadmap.md`
+
+Create a markdown file called `notebook_roadmap.md` that maps out every block
+of the notebook from data loading through symbolic extraction. This is a
+planning document, not code. For each block, specify:
+
+- **Block number and title**
+- **Which `src/` module(s) it calls**
+- **What it produces** (DataFrames, plots, saved artefacts)
+- **Pre-CV or Inner-CV** (whether the block runs before or inside the CV loop)
+- **Leakage risk level** (None / Low / High) and why
+
+The blocks must cover this sequence, and **only** this sequence (backtester
+is excluded, I'll implement it separately later):
+
+```
+Block 0  — Imports & Environment Setup
+Block 1  — Data Ingestion                           (a_data_loader.py)
+Block 2  — Macro EDA (Pre-Split Safe)
+Block 3  — Basic Feature Removal
+Block 4  — Feature Engineering                       (b_features.py)
+Block 5  — Pre-CV Econometrics                       (c_econometrics.py)
+Block 6  — Triple-Barrier Labeling & Sample Weights  (d_labels.py)
+Block 7  — Label EDA & Class Balance Report
+Block 8  — CV Fold Construction                      (e_cv.py)
+Block 9  — Target-Dependent EDA (Inside Fold 0 Only)
+Block 10 — Inner-CV Loop: FFD, Scaling, Feature      (c_econometrics.py,
+           Selection, Feature Importance               f_preproc.py)
+Block 11 — Inner-CV Loop: Baseline Training           (g_models.py)
+Block 12 — Inner-CV Loop: KAN Training (Phase 1+2)   (g_models.py)
+Block 13 — Inner-CV Loop: Calibration & Threshold
+Block 14 — Inner-CV Loop: Metrics & Registry
+Block 15 — Post-CV: Model Selection & Pruning         (g_models.py)
+Block 16 — Post-CV: Symbolic Extraction & Fidelity    (h_kan_math_expression.py)
+Block 17 — Post-CV: Regime Generalization Test
+Block 18 — Final Report: DSR, SR Distribution, Tables
+```
+
+For the roadmap, follow these rules:
+- Mark Blocks 0–9 as "Pre-CV" and Blocks 10–14 as "Inner-CV Wall."
+- Mark Blocks 15–18 as "Post-CV."
+- For each Inner-CV block, note which transforms are fitted on training
+  fold only.
+- Keep each block description to 3–5 lines. This is a map, not prose.
+
+---
+
+## Task 2: Implement Phase 1 (Blocks 0–4)
+
+Now write the actual notebook cells for Blocks 0 through 4. I will paste
+these into `MFW_Pipeline.ipynb`. Each block should be a separate cell (or
+group of cells) with a markdown header cell above it.
+
+### Design Rules for the Notebook
+
+1. **Report tone.** Every markdown cell should read like a research report
+   section: state what this step does, why it matters, and what to look for
+   in the output. No filler language. No words like "natively,"
+   "structurally," "boundaries," or "mappings" used as padding.
+
+2. **Comments are for the non-obvious.** Don't comment `# import pandas` above
+   `import pandas`. Do comment why a specific design choice was made, e.g.,
+   why forward-fill but never interpolation, or why a specific threshold
+   was chosen.
+
+3. **Every cell produces visible output.** Either a print statement, a
+   display() call, or a plot. No silent cells. The notebook is a report;
+   the reader should see evidence of each step completing correctly.
+
+4. **Logging enabled.** Set up Python logging so that the `src/` module
+   log messages (which use `logging.getLogger(__name__)`) are visible in
+   the notebook output.
+
+---
+
+### Block 0 — Imports & Environment Setup
+
+Set up the full environment. This block is run once and never touched again.
+
+**Requirements:**
+- Core: `pandas`, `numpy`
+- Visualization: `matplotlib`, `seaborn` with a clean default style
+- Pipeline modules: import from `src.a_data_loader` and `src.b_features`
+  (only these two are needed for Phase 1)
+- Future-block imports: also import from `src.c_econometrics`,
+  `src.d_labels`, `src.e_cv`, `src.f_preproc`, `src.g_models`,
+  `src.h_kan_math_expression` so the import block is complete even though
+  we won't use them yet. Group these under a "# Phase 2+" comment.
+- ML utilities: `sklearn.metrics`, `sklearn.calibration`, `json`
+- Configure logging at INFO level so `src/` module messages appear
+- Suppress `warnings.filterwarnings('ignore')` for clean output
+- Set matplotlib defaults: `figsize=(14, 5)`, `dpi=100`
+- Print a confirmation with the pandas and numpy versions
+
+**The actual data_loader imports available are:**
+```python
+from src.a_data_loader import (
+    load_from_config,
+    load_dataset,
+    DEFAULT_BTC_FULL_CONFIG,
+    DEFAULT_BTC_CONFIG,
+    ASSET_CATALOG,
+)
+```
+
+**The actual features imports available are:**
+```python
+from src.b_features import (
+    create_all_features,
+    create_ta_features,
+    create_onchain_features,
+    filter_correlated_features,
+    drop_warmup_nans,
+    create_lagged_features,
+)
+```
+
+---
+
+### Block 1 — Data Ingestion
+
+Fetch the raw BTC dataset using the data loader module.
+
+**Requirements:**
+- Use `load_from_config(DEFAULT_BTC_FULL_CONFIG)` as the primary call.
+  This fetches BTC-USD OHLCV + CoinMetrics on-chain + Blockchain.com
+  on-chain + macro features (DXY, VIX, 10Y Treasury).
+- The config uses `start="2014-09-17"` and `end="2026-03-07"`.
+- After loading, print: row count, column count, date range, list of
+  all columns grouped by source (OHLCV vs on-chain vs macro).
+- Display `raw_df.head()` and `raw_df.tail()`.
+- The markdown cell above should explain: this is raw, untransformed
+  daily data. The data loader handles UTC alignment, caching to
+  `data/raw/` as Parquet, and forward-fill of secondary features with
+  a 5-day gap limit. No look-ahead shifts are applied to the primary
+  OHLCV; secondary features (macro, on-chain) are shifted by 1 day
+  inside the loader to prevent look-ahead bias.
+
+---
+
+### Block 2 — Macro EDA (Pre-Split Safe)
+
+Exploratory analysis that is safe to run on the full dataset because it
+only examines raw distributions and never touches labels or targets.
+
+**Requirements — produce exactly these plots:**
+
+1. **BTC price history** (log scale) with halving dates marked as vertical
+   dashed lines. Halvings: 2012-11-28, 2016-07-09, 2020-05-11, 2024-04-20.
+
+2. **Missing data heatmap** using seaborn, transposed so columns are on
+   the y-axis and time is on the x-axis. This reveals which on-chain
+   features start late (CoinMetrics data begins later than 2014 for
+   some metrics).
+
+3. **Data availability timeline**: a horizontal bar chart showing the
+   first non-NaN date for each column, sorted by availability. This
+   tells us which features limit the usable date range.
+
+4. **Raw feature distribution summary**: `raw_df.describe().T` displayed
+   as a styled DataFrame. Flag any column where min == max (zero
+   variance) or where the NaN fraction exceeds 50%.
+
+The markdown cell above should explain that this EDA is pre-split safe:
+no label or target information is used. Any EDA that involves labels
+(feature-to-label correlations, class-conditional distributions) is
+deferred to Block 9 inside the CV loop.
+
+---
+
+### Block 3 — Basic Feature Removal
+
+Remove columns that are mathematically broken before feature engineering
+runs on them.
+
+**Requirements:**
+- Drop columns where `nunique() <= 1` (zero variance). Rolling
+  calculations downstream will produce NaN or divide-by-zero on these.
+- Drop columns where the NaN fraction exceeds 60%. These columns lack
+  enough history to be useful.
+- Print: which columns were dropped and why (zero-variance vs. high-NaN).
+- Print: the shape before and after.
+- Display a summary of remaining NaN counts per column, sorted descending.
+- The markdown cell above should explain: this is a structural cleanup
+  step, not feature selection. Feature selection (which requires label
+  information) happens inside the CV loop in Block 10. This step only
+  removes columns that would crash downstream rolling computations.
+
+---
+
+### Block 4 — Feature Engineering
+
+Generate all predictive features using the features module.
+
+**Requirements:**
+- Call `create_all_features(clean_df, include_ta=True, include_onchain=True, drop_correlated=False)`.
+  We do NOT drop correlated features here because that decision should
+  be informed by feature importance analysis inside CV (Block 10).
+- After the call, the returned `feature_metadata` dict maps each feature
+  name to its tag. The tags are: `raw_level`, `ratio`,
+  `bounded_oscillator`, `zero_centered`, `cyclical`, `event_time`.
+- Print: total feature count, breakdown by tag.
+- Specifically call out the `raw_level` tagged features and print a
+  warning that these REQUIRE Fractional Differentiation (FFD) before
+  modeling. FFD is applied inside the CV loop (Block 10), not here.
+- Display a table of all features and their tags, sorted by tag.
+- Plot: distribution of NaN counts per feature (histogram). This reveals
+  how many warm-up rows the rolling windows consume.
+- Call `drop_warmup_nans(df, list(feature_metadata.keys()))` to remove
+  the initial rows where rolling features haven't accumulated enough
+  history. Print the number of rows dropped and the new date range.
+- After warm-up removal, save the clean feature DataFrame as
+  `data/interim/features_pre_cv.parquet` and the metadata dict as
+  `data/interim/feature_metadata.json`. These are the inputs to
+  Block 5 (econometrics) in the next phase.
+- Display `df.head()` showing the first few rows of the feature matrix.
+- The markdown cell above should explain: `b_features.py` applies a
+  Universal Lag Rule — all rolling/expanding features are shifted by 1
+  day (`.shift(1)`) to prevent look-ahead bias, except cyclical
+  calendar features and deterministic event counters (days since halving)
+  which are exempt because they are known in advance. This makes
+  feature engineering safe to run pre-split. The `raw_level` features
+  (EMAs, VWMAs, ATR, realized volatility) are non-stationary and will
+  undergo FFD inside the CV loop.
+
+---
+
+## Files Attached
+
+I'm attaching `a_data_loader.py` and `b_features.py` so you can see the
+exact function signatures, return types, config presets, and feature
+metadata tags. Use these to write accurate import statements and function
+calls. Do not guess at parameter names or return values.
+
+## Output
+
+Produce two files:
+1. `notebook_roadmap.md` — the full planning document (Task 1)
+2. The notebook cell code for Blocks 0–4 (Task 2), clearly separated
+   with markdown headers, ready to paste into a Jupyter notebook
+
+Do not write any code for Blocks 5–18. Those will be implemented in
+future phases using the roadmap as the guide.
