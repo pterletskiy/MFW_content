@@ -1,1 +1,306 @@
+# Prompt: Notebook Phase 2 — Pre-CV Econometrics → Target-Dependent EDA (Blocks 5–9)
 
+## Context
+
+I'm building a report-style Jupyter notebook (`MFW_Pipeline.ipynb`) that
+orchestrates a KAN-based BTC direction prediction pipeline following Marcos
+López de Prado's AFML methodology.
+
+**Phase 1 (Blocks 0–4) is already complete.** At the end of Phase 1, the
+notebook has:
+
+- `df`: a DataFrame with all engineered features, warm-up NaN rows dropped.
+  Index is a UTC DatetimeIndex. Contains raw OHLCV columns (`Open`, `High`,
+  `Low`, `Close`, `Volume`) plus ~50+ engineered features.
+- `feature_metadata`: a dict mapping feature name → tag. Tags are:
+  `raw_level`, `log_level`, `ratio`, `bounded_oscillator`, `zero_centered`,
+  `cyclical`, `event_time`.
+- Saved artefacts: `data/interim/features_pre_cv.parquet` and
+  `data/interim/feature_metadata.json`.
+
+**Your task: write Blocks 5–9.** These blocks cover everything from
+econometric transforms through CV fold construction and target-dependent EDA.
+After these blocks, the notebook is ready for the inner-CV training loop
+(Phase 3, not covered here).
+
+---
+
+## Source Files Attached
+
+I'm attaching three Python modules. Read them carefully for exact function
+signatures, parameter names, return types, and default values:
+
+- `c_econometrics.py` — structural log transforms, SADF/SMT bubble signals,
+  FFD toolkit (used later inside CV, not here)
+- `d_labels.py` — Triple-Barrier Method, sample weights, sequential bootstrap,
+  average uniqueness
+- `e_cv.py` — PurgedKFold and CombinatorialPurgedKFold classes
+
+---
+
+## Design Rules (same as Phase 1)
+
+1. **Report tone.** Markdown cells read like a research report: what this
+   step does, why it matters, what to look for. No filler words. No "natively,"
+   "structurally," "boundaries," or "mappings" used as padding.
+
+2. **Comments are for the non-obvious.** Don't comment self-evident lines.
+   Do comment design decisions and AFML references.
+
+3. **Every cell produces visible output.** Print, display(), or plot.
+   No silent cells.
+
+4. **Logging is already configured** from Block 0 at INFO level. The `src/`
+   modules use `logging.getLogger(__name__)` and their messages will appear
+   automatically.
+
+---
+
+## Block 5 — Pre-CV Econometrics (`c_econometrics.py`)
+
+This block applies econometric transforms that are safe to run on the full
+dataset before any CV split. It does NOT apply FFD (that's inside the CV
+loop in Phase 3).
+
+**What `apply_continuous_econometrics` does internally (read the source):**
+1. Creates a `Raw_Close` column (a copy of `Close` preserved for
+   Triple-Barrier labeling downstream, since `Close` may be transformed).
+2. Applies `np.log1p` to all `raw_level` tagged features that are strictly
+   non-negative. Updates their tags from `raw_level` to `log_level`.
+3. Computes a rolling SADF bubble signal on `Close` (min_window=100, lags=1).
+   The output is shifted by 1 day to prevent look-ahead. Tagged `zero_centered`.
+4. Computes two SMT (Sub-Martingale Test) signals with different
+   parameterizations (poly1/phi=0.1 and poly2/phi=0.9). Both shifted by 1.
+
+**Requirements for the notebook cell:**
+- Call `apply_continuous_econometrics(df, feature_metadata, asset_prefix="BTC")`.
+- After the call, print: how many features were log-transformed (count
+  tags that changed from `raw_level` to `log_level`), names of new
+  columns added (SADF, SMT signals).
+- Display the updated tag distribution (value_counts of feature_metadata).
+- **Important explanatory note in the markdown cell:** FFD (Fractional
+  Differentiation) is intentionally NOT applied here. The `c_econometrics.py`
+  module contains `find_optimal_d` and `frac_diff_ffd`, but these are
+  CV-loop tools. Fitting d* on the full dataset would leak distributional
+  information from the test fold. FFD will be applied per-fold inside
+  Block 10 (Phase 3).
+- Print a reminder that `Raw_Close` has been created and will be used by
+  the Triple-Barrier Method in the next block, then dropped from the
+  feature set before modeling.
+- Save updated df to `data/interim/features_econometrics.parquet` and
+  updated feature_metadata to `data/interim/feature_metadata_econ.json`.
+
+---
+
+## Block 6 — Triple-Barrier Labeling & Sample Weights (`d_labels.py`)
+
+This block generates the classification targets and observation weights that
+the entire downstream pipeline depends on.
+
+**The module provides a high-level orchestrator: `run_labels`.** Use it.
+Its signature is:
+
+```python
+run_labels(
+    close: pd.Series,            # Must be Raw_Close (untransformed prices)
+    tEvents: pd.DatetimeIndex,   # Seed timestamps (all available dates for now)
+    numDays: int = 5,            # Vertical barrier: max holding period in days
+    ptSl: list = [1, 1],         # Symmetric barriers: 1x vol for both PT and SL
+    minRet: float = 0.005,       # Min target return to place a barrier
+    minPctLabel: float = 0.0,    # Min return fraction to avoid tiny-return labels
+    dropLabels: bool = True,     # Drop ambiguous near-zero labels (AFML default)
+    decay_c: float = 1.0,        # Time decay factor (1.0 = no decay)
+    span0: int = 100,            # EWMA vol span
+    numThreads: int = None,      # Auto-detects CPU count
+    saveInterim: bool = True,    # Saves events, bins, weights to data/interim/
+    interim_path: str = "data/interim/"
+) -> dict
+```
+
+It returns a dict with keys: `'events'`, `'bins'`, `'sampleWeights'`,
+`'seqBootstrapIdx'`.
+
+- `events`: DataFrame indexed by t0 with columns `['t1', 'trgt', 'side']`
+- `bins`: DataFrame indexed by t0 with columns `['ret', 'bin']` where
+  `bin ∈ {-1, +1}` (neutrals are dropped when `dropLabels=True`)
+- `sampleWeights`: Series of uniqueness × return-attributed weights
+- `seqBootstrapIdx`: list of indices from the sequential bootstrap
+
+**Requirements for the notebook cell:**
+
+- The `close` argument MUST be `df['Raw_Close']` (untransformed log prices
+  would corrupt the barrier distance calculations).
+- For `tEvents`, use the full index: `df.index` (we are not applying a CUSUM
+  filter in this version; all days are candidate events). Add a comment
+  noting that a CUSUM filter could be applied here per AFML §2.5 to reduce
+  over-sampling in quiet regimes, and that this is a future improvement.
+- Use `numDays=5` (1-week holding period), `ptSl=[1, 1]` (symmetric
+  barriers at 1× daily vol), `minRet=0.005`, `dropLabels=True`.
+- After the call, extract the four outputs into named variables:
+  `events`, `bins`, `weights`, `seq_bootstrap_idx`.
+- Extract the t1 Series for CV: `t1 = events['t1']`.
+- Print: total events count, label distribution (value_counts with
+  percentages), average holding period in days (`(events['t1'] - events.index).mean()`),
+  and weight statistics (mean, std, min, max).
+- The markdown cell above should explain the Triple-Barrier Method in 4–5
+  sentences: each event starts at t0, the price path is monitored until
+  either the upper horizontal barrier (+1× vol), the lower horizontal
+  barrier (-1× vol), or the vertical barrier (5 days) is touched first.
+  The label is +1, -1, or 0 respectively. With `dropLabels=True`,
+  ambiguous near-zero returns are dropped. Sample weights correct for
+  the non-IID nature of overlapping labels using average uniqueness
+  weighted by absolute returns.
+
+---
+
+## Block 7 — Label EDA & Class Balance Report
+
+A dedicated diagnostic block for the labeling output. This is separated from
+Block 6 to keep execution and visualization distinct.
+
+**Requirements — produce exactly these outputs:**
+
+1. **Class balance bar chart**: a countplot of `bins['bin']` with counts
+   and percentages annotated on each bar. Color-code: green for +1,
+   red for -1.
+
+2. **Holding period distribution**: histogram of `(events['t1'] - events.index).dt.days`
+   showing how many events hit the vertical barrier (5 days) vs. the
+   horizontal barriers (shorter holding periods). Add a vertical dashed
+   line at `numDays=5` to mark the vertical barrier.
+
+3. **Sample weight distribution**: histogram of `weights` with mean marked
+   as a vertical dashed line. Note whether the distribution is right-skewed
+   (expected, since high-return, unique events get large weights).
+
+4. **Return distribution by label**: overlapping histograms of `bins['ret']`
+   split by `bins['bin']` (one color per class). This shows whether the
+   barriers create clean separation in return space.
+
+5. **Event coverage timeline**: plot the density of labeling events over
+   time (e.g., rolling 30-day count of events). Overlay BTC price on a
+   secondary y-axis. This reveals whether events cluster during volatile
+   periods (expected).
+
+6. **Print a class balance warning** if any class has less than 20% of total
+   samples, referencing AFML Chapter 4.8's recommendation to use
+   `class_weight='balanced'` downstream.
+
+The markdown cell above should explain: this EDA examines the labeling output
+and is safe to run pre-split because we are inspecting the labels themselves,
+not their relationship to features. Feature-to-label correlations are deferred
+to Block 9 inside the CV loop.
+
+---
+
+## Block 8 — CV Fold Construction (`e_cv.py`)
+
+Build both CV generators that the pipeline will use.
+
+**Requirements:**
+
+- Import classes: `PurgedKFold` and `CombinatorialPurgedKFold` (already
+  imported in Block 0).
+- Instantiate both:
+  ```python
+  pkf = PurgedKFold(n_splits=6, t1=t1, pct_embargo=0.01)
+  cpcv = CombinatorialPurgedKFold(n_splits=6, n_test_splits=2, t1=t1, pct_embargo=0.01)
+  ```
+- Generate the fold splits for PurgedKFold: `cv_splits = list(pkf.split(df))`.
+  This materializes all (train_idx, test_idx) pairs.
+- Print for each fold: train size, test size, train date range, test date
+  range, number of observations purged (original train size from a naive
+  split minus actual train size after purging).
+- Print CPCV summary: total combinations (`cpcv.phi`), number of backtest
+  paths, training fraction per combination.
+- **Fold boundary visualization**: plot a timeline where each fold's test
+  period is shown as a colored horizontal bar. Stack the 6 folds vertically.
+  Overlay BTC price on a secondary axis. This shows the researcher exactly
+  which market regimes each fold covers, crucial for interpreting
+  fold-specific results later.
+- The markdown cell above should explain: PurgedKFold is used for model
+  development (hyperparameter tuning, feature selection). CPCV is used
+  for final backtest evaluation, generating N-1 = 5 backtest paths from
+  which we derive a distribution of Sharpe ratios rather than a single
+  point estimate. The embargo of 1% (~20 trading days for 10 years of
+  data) eliminates serial correlation leakage at fold boundaries.
+
+---
+
+## Block 9 — Target-Dependent EDA (Inside Fold 0 Only)
+
+This EDA involves features and labels together, so it MUST run inside a
+single CV fold to prevent information leakage.
+
+**Requirements:**
+
+- Use fold 0 from `cv_splits` (already materialized in Block 8).
+- Extract the training partition only: `X_train_fold0 = df.iloc[train_idx]`,
+  `y_train_fold0 = bins.loc[df.index[train_idx], 'bin']` (handle index
+  alignment carefully since not all df rows may have labels).
+- **Produce these visualizations on the training partition of fold 0 only:**
+
+  1. **Feature-to-label correlation heatmap**: compute point-biserial
+     correlation between each feature and the binary label. Display the
+     top 20 features by absolute correlation as a horizontal bar chart.
+     This previews which features may carry signal, but is NOT used for
+     feature selection (that happens formally with MDI/MDA/SFI in Block 10).
+
+  2. **Feature distributions by class**: for the top 5 features by
+     absolute correlation, plot overlapping KDE distributions split by
+     label class. This shows whether the feature creates separation
+     between +1 and -1 events.
+
+  3. **Correlation matrix (features only)**: heatmap of inter-feature
+     correlations for the top 20 features. Highly correlated feature pairs
+     (|ρ| > 0.90) should be flagged in a printed table, as these may cause
+     substitution effects in feature importance analysis later.
+
+- The markdown cell above should explain: this block uses fold 0's training
+  data exclusively. No test-fold data is touched. The correlations shown
+  here are exploratory and do not drive any automated decisions. Formal
+  feature importance (MDI, MDA, SFI) is computed inside the CV loop in
+  Block 10. The purpose of this EDA is to give the researcher an intuition
+  for which features may matter before the model training loop begins.
+
+---
+
+## Important Notes for Implementation
+
+1. **Index alignment between df and bins**: `bins` is indexed by the event
+   t0 timestamps from `run_labels`. Not every row of `df` will have a label
+   (some may have been dropped by `minRet` or `dropLabels`). When slicing
+   features for the CV loop, always align via `bins.index` intersection
+   with `df.index`, not by positional indexing.
+
+2. **The `t1` Series**: this is the critical object that connects labeling
+   to CV. It maps each event's start time (t0) to its barrier-touch time
+   (t1). Both `PurgedKFold` and `CombinatorialPurgedKFold` require it to
+   know which training observations overlap with the test set.
+
+3. **`Raw_Close` usage**: the labels module needs `Raw_Close` (untransformed
+   prices) for barrier calculations. After labeling is complete, `Raw_Close`
+   is no longer needed as a feature. It should be excluded from any feature
+   matrix passed to models. The `feature_metadata` dict already excludes
+   raw OHLCV columns, so filtering features by `list(feature_metadata.keys())`
+   is the safe pattern.
+
+4. **SADF/SMT computation time**: the econometrics block computes O(n³)
+   SADF and SMT signals. On ~4000 daily observations this takes 1–3 minutes.
+   Add a print statement before and after with elapsed time so the user
+   knows the notebook hasn't hung.
+
+5. **Saving convention**: every block that transforms data saves its output
+   to `data/interim/` so that the notebook can be restarted from any block
+   by loading the previous block's saved artefacts. Include a commented-out
+   "load from checkpoint" cell at the top of each block for this purpose.
+
+---
+
+## Output
+
+Produce the notebook cells for Blocks 5–9, each preceded by a markdown
+header cell. Format them ready to paste into Jupyter. Match the style
+established in Phase 1 (clean, report-quality, no padding language).
+
+Do not write code for Blocks 10+. Those are Phase 3.
