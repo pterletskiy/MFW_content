@@ -1,1 +1,81 @@
-...
+BIBTEX KEY: wu_crypto_dl_review_2024
+
+METADATA:
+
+Authors: Jingyang Wu, Xinyi Zhang, Fangyixuan Huang, Haochen Zhou, and Rohtiash Chandra
+
+Year: 2024
+
+Title: Review of Deep Learning Models for Crypto Price Prediction: Implementation and Evaluation
+
+Journal/Publication: arXiv preprint arXiv:2405.11431
+
+DOI/URL: [not found in BibTeX entry, implicitly https://arxiv.org/abs/2405.11431]
+
+Keywords from article: cryptocurrency, deep learning, time series prediciton
+
+OBJECTIVE(S):
+To comprehensively review the literature on deep learning for cryptocurrency forecasting and to empirically evaluate novel deep learning models (variants of LSTM, CNN, and Transformer) for multi-step ahead cryptocurrency price prediction. The study specifically aims to compare univariate and multivariate approaches and to investigate the impact of the COVID-19 pandemic's extreme market volatility on prediction accuracy.
+
+RESEARCH QUESTION / HYPOTHESIS:
+Which deep learning architectures (LSTM variants, CNNs, or Transformers) provide the best multi-step ahead prediction accuracy for highly volatile cryptocurrency prices? Furthermore, how do multivariate models (incorporating external features like gold and correlated cryptos) compare to univariate models, and how does the high volatility induced by the COVID-19 pandemic impact the models' predictive capabilities?
+
+METHODOLOGY:
+
+Study design: Literature review combined with a comparative experimental, quantitative evaluation of deep learning models for time-series forecasting.
+
+Sample / corpus: Daily historical data for four cryptocurrencies: Bitcoin (BTC), Ethereum (ETH), Dogecoin (DOGE), and Litecoin (LTC). External data included the daily stock price of Gold from the London Bullion Market (LBMA). Data spans from 2013/2015 to April 2024, yielding up to 3,991 daily observations per asset.
+
+Instruments / materials: Six deep learning models: LSTM, Bidirectional LSTM (BD-LSTM), Encoder-Decoder LSTM (ED-LSTM), Convolutional LSTM (Conv-LSTM), CNN, and Transformer. Baseline models included Multilayer Perceptron (MLP) and ARIMA. Optimization was performed using the Adam optimizer, and data was normalized using a Min-Max scaler.
+
+Procedures (step by step):
+
+Data extraction and pre-processing, including linear interpolation to fill missing gold prices on weekends/holidays, and min-max scaling.
+
+Data splitting into two distinct experimental sets: Dataset 1 (training on pre-COVID-19 data) and Dataset 2 (training on data including the COVID-19 period), split using a 70:30 train-test ratio.
+
+Hyperparameter selection based on literature, trial runs, and minimum RMSE on the training set (optimizing hidden units, learning rates, etc.).
+
+Pre-experiment data analysis, specifically calculating the monthly volatility of the target assets and mapping feature correlations using Pearson coefficients.
+
+Experiment 1: Evaluating the models on Dataset 1, comparing Univariate and standard Multivariate strategies.
+
+Experiment 2: Evaluating the models on Dataset 2 using the Univariate and an enhanced "Multivariate*" strategy (which adds the price of the most highly correlated alternative cryptocurrency) to test robustness against COVID-19 volatility.
+
+Data analysis techniques: Root Mean Square Error (RMSE) used as the primary performance criterion. Models were run 30 independent times to compute the mean RMSE and 95% confidence intervals for multi-step prediction horizons (1 to 5 days ahead). Pearson correlation was utilized for feature selection.
+
+MAIN RESULTS:
+
+The Convolutional LSTM (Conv-LSTM) model utilizing the enhanced multivariate strategy consistently provided the best prediction accuracy across both pre-COVID-19 and COVID-19 experimental settings.
+
+Multivariate deep learning models exhibited notably better performance and stability in forecasting the four cryptocurrencies when compared to univariate models.
+
+The enhanced "Multivariate*" strategy—which included the crypto's open, high, low, close prices, Gold prices, and the close price of the most correlated alternative cryptocurrency (e.g., adding Ethereum data when predicting Bitcoin)—significantly outperformed standard univariate and multivariate baselines.
+
+Prediction accuracy for all models naturally deteriorated (RMSE increased) as the multi-step prediction horizon expanded from 1 day to 5 days ahead.
+
+Training models on the COVID-19 dataset (Experiment 2) resulted in worse overall accuracy (e.g., BTC test mean RMSE dropped from ~0.02 to ~0.03) compared to pre-COVID-19 data, proving that high historical volatility weakens prediction precision.
+
+Dogecoin yielded the worst prediction accuracy (highest RMSE) among the four assets, heavily attributed to its extreme and sudden price fluctuations driven by social media rather than steady market trends.
+
+The Transformer model delivered surprisingly unsatisfactory results (ranking lowest or second lowest in many tests), which the researchers attributed to the lack of sufficient training data size required for attention-heavy models.
+
+DIRECT QUOTATIONS:
+
+"Our results show that the convolutional LSTM with a multivariate approach provides the best prediction accuracy in two major experimental settings." (p. 1)
+"Our findings indicate that combining the closing prices of the highest-correlated cryptocurrencies into the multivariate model leads to a significant enhancement in the model’s accuracy in forecasting." (p. 30)
+"Our experimental results show that utilising a training data set with high volatility weakens the precision of our predictions." (p. 30)
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that deep learning methodologies, particularly the Convolutional LSTM architecture, are highly effective tools for cryptocurrency time-series forecasting, significantly outperforming traditional statistical models like ARIMA and standard MLPs. They assert that relying purely on univariate historical data is insufficient for this asset class; instead, multi-step predictions are drastically improved by adopting a multivariate strategy that incorporates external, highly correlated features—specifically, the price of gold and closely related cryptocurrencies. Ultimately, they conclude that while deep learning captures the complex, non-linear dynamics of crypto markets well, extreme market disruptions (such as the COVID-19 pandemic) introduce levels of volatility that inherently degrade the predictive capabilities and robustness of all tested models.
+
+LIMITATIONS (as stated by authors):
+
+Lack of uncertainty quantification in the point-forecasts, which could be remedied in the future by adopting Bayesian deep learning methods (like MCMC sampling or variational inference).
+
+The study relied exclusively on unimodal (numerical time-series) data. It did not capture qualitative market drivers such as news media sentiment or social media text, which heavily influence cryptocurrency markets.
+
+The limited size of the available historical dataset constrained the performance of data-hungry models, particularly the Transformer architecture.
+
+ADDITIONAL NOTES:
+The paper explicitly highlights that simply feeding a model arbitrary multivariate data can confuse it. The marked improvement in their "Multivariate*" approach was achieved specifically through rigorous Pearson correlation analysis to ensure only the most statistically relevant external assets (like Gold and Ethereum for Bitcoin) were fed into the feature window.
