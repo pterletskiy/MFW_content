@@ -58,3 +58,324 @@ ADDITIONAL NOTES:This paper provides the exact methodological justification for 
 
 -----
 
+BIBTEX KEY: gao_decokan_2025
+
+METADATA:
+Authors: Yuan Gao, Zhenguo Dong, Xuelong Wang, Zhiqiang Wang, Yong Zhang, and Shaofan Wang   Year: 2025   Title: DecoKAN: Interpretable Decomposition for Forecasting Cryptocurrency Market Dynamics   Journal/Publication: arXiv preprint arXiv:2512.20028v1 [cs.LG]   DOI/URL: [not found]Keywords from article: Cryptocurrency, Time Series Forecasting, Kolmogorov-Arnold Networks, Wavelet Transform   
+
+OBJECTIVE(S):
+To propose DecoKAN, an interpretable forecasting framework that synergistically integrates multi-level Discrete Wavelet Transform (DWT) for hierarchical signal decomposition with Kolmogorov-Arnold Network (KAN) mixers for transparent, nonlinear modeling of complex cryptocurrency market dynamics.   
+
+RESEARCH QUESTION / HYPOTHESIS:
+Can a forecasting framework combining Discrete Wavelet Transform (DWT) with Kolmogorov-Arnold Networks (KANs) accurately decouple and predict the composite dynamics (long-term trends and high-frequency speculative noise) of cryptocurrency markets while providing intrinsic, mathematically explicit interpretability?   
+
+METHODOLOGY:
+Study design: Methodological proposal and empirical quantitative evaluation against state-of-the-art baselines on multivariate time series forecasting.   Sample / corpus (size, characteristics): Four general ETT benchmark datasets (ETTh1, ETTh2, ETTm1, ETTm2) and three real-world cryptocurrency datasets (Bitcoin/BTC, Ethereum/ETH, Monero/XMR) sourced from Coin Metrics.   Instruments / materials: Python/PyTorch framework, multi-level Discrete Wavelet Transform (using 'db4' wavelet), KAN mixers (incorporating learnable B-spline activations), and Reversible Instance Normalization (RevIN).   Procedures (step by step):Normalized input multivariate time series using RevIN to mitigate distribution shifts.   Decomposed the normalized series into distinct approximation (low-frequency) and detail (high-frequency) coefficient series using multi-level DWT.   Processed each coefficient series independently through dedicated KAN Resolution Branches containing Temporal and Feature KAN Mixers to learn frequency-specific patterns.   Synthesized the predicted coefficients back into the time domain using Inverse DWT (IDWT) and denormalized the final output.   Evaluated model accuracy (MSE and MAE) against various MLP, Transformer, CNN, and Graph-based baselines across multiple prediction horizons.   Applied a three-stage interpretability pipeline (Sparsification via L1/entropy regularization, Pruning based on L2 norm threshold, and Symbolification) to extract explicit mathematical formulas from the trained KAN mixers.   Data analysis techniques: Mean Squared Error (MSE) and Mean Absolute Error (MAE) for forecasting accuracy; computational efficiency analysis (Parameters, GFLOPs, Training/Inference time); symbolic regression analysis ($R^2$ scores) for interpretability.   
+
+MAIN RESULTS:
+Result 1: DecoKAN achieved state-of-the-art long-term forecasting performance, recording the lowest average MSE on all tested real-world cryptocurrency datasets (BTC, ETH, XMR) across all prediction horizons compared to baseline models like WPMixer and TimeFilter.   Result 2: Compared to the strong WPMixer baseline, DecoKAN reduced the average MSE by approximately 15.0% on BTC, 29.1% on ETH, and 15.1% on XMR.   Result 3: An ablation study revealed a functional separation based on dataset types: the Feature KAN mixer was critical for capturing instantaneous cross-variate dependencies in volatile crypto data, while the Temporal KAN mixer was more important for highly autocorrelated general datasets like ETTh2.   Result 4: Interpretability analysis (pruning) showed that the Approximation Branch acts as a dense, robust structural backbone (only 4.79% of edges pruned), whereas the Detail Branch learns highly sparse representations (76.28% pruned) to effectively model transient fluctuations.   Result 5: The symbolification process successfully extracted explicit mathematical formulas (predominantly polynomials and trigonometric functions) from the Detail Branch with high confidence ($R^2 > 0.99$), explicitly explaining the high-frequency market volatility.   Result 6: DecoKAN demonstrated highly efficient theoretical computation (e.g., 0.0073 GFLOPs at T=96) and competitive inference speeds, despite requiring longer training times due to unoptimized B-spline operations.   
+
+DIRECT QUOTATIONS:
+"To overcome these limitations, we propose DecoKAN, an interpretable forecasting framework that integrates multi-level Discrete Wavelet Transform (DWT) for decoupling ing and hierarchical signal decomposition with Kolmogorov-Arnold Network (KAN) mixers for transparent and interpretable nonlinear modeling." (p. 1) "Unlike traditional time series (e.g., electricity load) dominated by strong temporal autocorrelation, cryptocurrency prices are often driven by high-frequency shocks and the instantaneous interplay between system variables... Consequently, the performance of DecoKAN here relies predominantly on the Feature KAN component’s ability to capture these complex cross-variate dependencies..." (p. 9) 
+"Interpretability analysis revealed a functional separation within the model: the Detail Branch captures explicit symbolic relations for high-frequency fluctuations, while the Approximation Branch acts as a robust structural backbone for the forecasting task." (p. 11)   
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that DecoKAN successfully bridges the gap between high predictive accuracy and intrinsic model transparency for complex multivariate time series. By utilizing a multi-resolution wavelet decomposition (DWT) combined with Kolmogorov-Arnold Networks (KANs), the framework effectively separates slow-moving trends from high-frequency market noise. Furthermore, the intrinsic interpretability of the KAN mixers allows the extraction of explicit mathematical laws governing cryptocurrency dynamics. They assert that this combination of decoupled signal processing and symbolic transparency makes DecoKAN highly suitable for trustworthy financial decision-making, algorithmic trading, and risk assessment, despite current hardware-related training inefficiencies.   
+
+LIMITATIONS (as stated by authors):
+Slower training times compared to standard MLP or Transformer architectures due to the computationally intensive nature of B-spline operations in KANs, which currently lack optimized GPU parallelization.   The symbolification process relies on a pre-defined, finite set of candidate mathematical functions to fit the curves.   Interpreting the extracted symbolic graphs and formulas still requires significant human domain expertise.   
+
+ADDITIONAL NOTES:
+The model uniquely employs two regularizations for sparsification during training: an L1-based penalty to encourage overall function sparsity and an entropy-based penalty to encourage structural sparsity at the neuron level.   
+
+-----
+
+BIBTEX KEY: genet_inzirillo_2024
+
+METADATA:Authors: Rémi Genet and Hugo InzirilloYear: 2024Title: TKAN: Temporal Kolmogorov-Arnold NetworksJournal/Publication: arXiv preprint arXiv:2405.07344v4DOI/URL: [not found in BibTeX entry, implicitly https://arxiv.org/abs/2405.07344]Keywords from article: [not found]
+
+OBJECTIVE(S):
+To propose and evaluate a novel neural network architecture called Temporal Kolmogorov-Arnold Networks (TKAN), which integrates the memory management mechanisms of Long Short-Term Memory (LSTM) networks with the learnable spline activations of Kolmogorov-Arnold Networks (KANs) for enhanced multi-step time series forecasting.
+
+RESEARCH QUESTION / HYPOTHESIS:
+Can the integration of KAN-based layers into an LSTM-like recurrent architecture (forming Recurring Kolmogorov-Arnold Networks or RKANs) significantly improve prediction accuracy and stability for multi-step time series forecasting compared to traditional RNNs, GRUs, and LSTMs?
+
+METHODOLOGY:
+Study design: Architectural proposal and empirical quantitative comparative analysis on synthetic and real-world financial time series data.Sample / corpus (size, characteristics): Two distinct datasets were utilized: (1) A synthetic Sine Wave dataset simulating regular, predictable periodic sequences, and (2) A real-world historical Bitcoin (BTC) market dataset utilizing 1-hour timeframe OHLCV data to test complex, noisy financial patterns.Instruments / materials: The proposed TKAN model (built using RKAN layers), alongside established baseline models including standard LSTM, GRU, RNN, and standard KAN. Implementation was carried out using Python and standard deep learning frameworks.Procedures (step by step):Designed the foundational RKAN layer by substituting the standard fully connected dense layers within traditional LSTM gating mechanisms (the forget, input, output, and cell state gates) with KANLinear layers (which utilize B-splines instead of fixed activations).Conducted initial baseline evaluations using the generated sine wave dataset to verify the model's fundamental ability to capture and reproduce sequential patterns across multiple future steps.Processed and sequenced the historical Bitcoin dataset for a multi-step forecasting task.Trained the TKAN, LSTM, and GRU models on the Bitcoin data under identical configurations.Evaluated and compared the models on out-of-sample data across multiple prediction steps to assess long-term sequence generation and error accumulation.Data analysis techniques: Mean Squared Error (MSE), Mean Absolute Error (MAE), and R-squared ($R^2$) scores were utilized to quantify forecasting accuracy, stability, and goodness-of-fit over extended prediction horizons.
+
+MAIN RESULTS:
+Result 1: On the synthetic sine wave dataset, TKAN significantly outperformed traditional LSTM and GRU models in multi-step predictions, accurately maintaining the wave structure and amplitude over long horizons where other models degraded or flatlined.Result 2: On the real-world Bitcoin dataset, TKAN consistently achieved lower Mean Squared Error (MSE) and Mean Absolute Error (MAE) compared to both LSTM and GRU across multiple out-of-sample prediction horizons.Result 3: TKAN demonstrated superior stability and reduced error accumulation over long periods (multi-step forecasting), effectively addressing a common weakness of standard recurrent networks which often struggle with long-term predictive degradation.Result 4: The experiments empirically proved that the core idea of the original KAN paper (using learnable activation functions on edges) is highly relevant and transferable to sequential time-series analysis when combined with memory management.
+
+DIRECT QUOTATIONS:
+"Inspired by the Kolmogorov-Arnold Networks (KANs), a promising alternative to Multi-Layer Perceptrons (MLPs), we propose a new neural network architecture inspired by KAN and LSTM, called 'Temporal Kolomogorov-Arnold Networks' (TKANs)." (p. 1)"By substituting the dense layers in traditional RNNs or LSTMs with KAN layers, TKANs benefit from the exact representational power of KANs, allowing for a more accurate and efficient processing of sequential data." (p. 3)"While not specifically interesting for short-term predictions, it especially demonstrates an ability to largely outperform other models when it comes to multi-step predictions." (p. 6)
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that embedding KAN layers into recurrent architectures (specifically replacing LSTM dense gates with KANLinear layers to form RKANs) creates a highly robust model for time series analysis. TKAN successfully leverages the high-accuracy function approximation of B-splines while preserving the vital memory management required for processing sequential data. They emphasize that while TKAN may not be strictly necessary for very simple or short-term single-step predictions, it drastically outperforms standard LSTMs and GRUs in multi-step, long-horizon forecasting tasks due to its superior stability and reduced error accumulation over time.
+
+LIMITATIONS (as stated by authors):
+TKAN architectures involve higher computational complexity during training due to the evaluation of B-splines in every gate, making them computationally heavier and slower to train than standard LSTMs.The model does not provide significant predictive advantages for very short-term (e.g., single-step) predictions, making it overkill for simpler forecasting tasks.
+
+ADDITIONAL NOTES:
+The paper formally introduces the concept of the "RKAN" (Recurring Kolmogorov-Arnold Network) layer. This layer serves as the fundamental building block of the overall TKAN architecture, and the paper provides the explicit mathematical mapping of standard LSTM gating equations into their KAN-equivalent representations.
+
+-----
+
+BIBTEX KEY: noorizadegan_2026
+
+METADATA:
+
+Authors: Amir Noorizadegan, Sifan Wang, Leevan Ling, and Juan P. Dominguez-Morales
+
+Year: 2026
+
+Title: A Practitioner's Guide to Kolmogorov-Arnold Networks
+
+Journal/Publication: arXiv preprint arXiv:2510.25781
+
+DOI/URL: [not found]
+
+Keywords from article: [not found]
+
+OBJECTIVE(S):
+To provide a systematic and comprehensive overview of the rapidly expanding Kolmogorov-Arnold Network (KAN) literature, clarifying their theoretical foundations, and to offer a highly practical "Choose-Your-KAN" guide to help researchers select and optimize these models.
+
+RESEARCH QUESTION / HYPOTHESIS:
+How do various Kolmogorov-Arnold Network architectures relate to traditional MLPs and classical Kolmogorov Superposition Theory, and what are the best practices for systematically designing, selecting, and optimizing KANs based on specific problem requirements and basis functions?
+
+METHODOLOGY:
+
+Study design: Comprehensive literature review and practitioner's methodological guide/taxonomy.
+
+Sample / corpus (size, characteristics): The rapidly expanding body of recent literature proposing and evaluating variants of Kolmogorov-Arnold Networks (KANs).
+
+Instruments / materials: Theoretical analysis of the Kolmogorov Superposition Theorem (KST), Multi-Layer Perceptrons (MLPs), classical kernel methods, and various basis functions (e.g., B-splines, Wavelets, Chebyshev polynomials).
+
+Procedures (step by step):
+
+Clarified the theoretical relationships between KANs, exact KST, MLPs, and classical kernel methods.
+
+Categorized and analyzed KAN variants based on their central design axis: the choice of basis functions on the network edges.
+
+Summarized recent literature advances regarding model accuracy, computational efficiency, regularization techniques, and convergence properties.
+
+Developed a step-by-step "Choose-Your-KAN" algorithmic guide (decision tree) to direct practical implementation based on data properties and computational constraints.
+
+Data analysis techniques: Qualitative synthesis, taxonomic classification of neural network architectures, and development of practical heuristic frameworks.
+
+MAIN RESULTS:
+
+Result 1: Modern KANs are practically "inspired by" rather than strictly "dictated by" the exact Kolmogorov Superposition Theorem, allowing them to bypass the pathological roughness of exact KST representations to achieve empirical machine learning utility.
+
+Result 2: The choice of basis function (e.g., B-splines, Chebyshev polynomials, Radial Basis Functions, Wavelets) serves as the central design axis, fundamentally dictating the network's accuracy, efficiency, and degree of interpretability.
+
+Result 3: While standard KANs suffer from computational inefficiency due to the cost of evaluating independent splines per edge, the review identifies that newer variants (such as FastKAN, ReLU-KAN, and implementations using JAX/CUDA kernels) significantly mitigate this speed bottleneck.
+
+Result 4: The study established a comprehensive 6-step framework for practitioners, providing explicit rules such as: using Wavelet KANs for multiscale/heterogeneous problems, applying residual-adaptive sampling for localized errors, and prioritizing ReLU-KAN or FastKAN when computational speed is the primary objective.
+
+DIRECT QUOTATIONS:
+
+"Kolmogorov-Arnold Networks (KANs), whose design is inspired rather than dictated by the Kolmogorov superposition theorem, have emerged as a structured alternative to MLPs." (p. 1)
+"The review is organized around three core themes: (i) clarifying the relationships between KANs and Kolmogorov superposition theory (KST), MLPs, and classical kernel methods; (ii) analyzing basis functions as a central design axis..." (p. 1)
+"if problem is multiscale or spatially heterogeneous then Use Wavelet KAN or FBKAN... if speed is the primary objective then Prefer ReLU-KAN, HRKAN, FastKAN, LeanKAN" (p. 21)
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that KANs offer a highly structured, expressive, and interpretable alternative to traditional MLPs, effectively bridging the gap between exact mathematical approximation theory and empirical deep learning. By understanding the theoretical underpinnings and treating the choice of basis functions and grid resolutions as configurable design axes, practitioners can tailor KANs to solve complex, domain-specific problems. They emphasize that while standard KANs face recognized computational and memory challenges, the rapidly growing ecosystem of specialized variants and hardware optimizations makes these networks increasingly viable for both high-speed applications and rigorous scientific discovery.
+
+LIMITATIONS (as stated by authors):
+
+The primary limitation highlighted across the KAN literature is their computational overhead and slower training speeds compared to highly optimized MLPs, primarily due to the necessity of evaluating complex, independent basis functions on every network connection.
+
+ADDITIONAL NOTES:
+The paper concludes with a highly actionable, pseudocode-style algorithmic guide that helps developers systematically walk through data preprocessing, basis selection, grid configuration, physics-informed constraints, and optimization strategies depending on whether they are optimizing for pure speed or high-fidelity accuracy.
+
+-----
+
+BIBTEX KEY: yamak_et_al_2025
+
+METADATA:
+
+Authors: Peter Tettey Yamak, Yujian Li, Ting Zhang, and Muhammad Salman Pathan
+
+Year: 2025
+
+Title: Kolmogorov-Arnold networks for time series forecasting: a comprehensive review
+
+Journal/Publication: Cluster Computing
+
+DOI/URL: 10.1007/s10586-025-05574-9
+
+Keywords from article: Kolmogorov-Arnold Networks, Time series forecasting, B-splines, Explainable AI, Nonlinear dynamics, Deep learning
+
+OBJECTIVE(S):
+To present a comprehensive review of Kolmogorov-Arnold Networks (KANs) applied to time series forecasting (TSF), analyzing how they leverage the Kolmogorov-Arnold theorem to decompose temporal dependencies into interpretable, spline-parameterized univariate functions, while evaluating their empirical performance, architectural innovations, and current limitations.
+
+RESEARCH QUESTION / HYPOTHESIS:
+How do Kolmogorov-Arnold Networks (KANs) transform time series forecasting by replacing fixed node activations with learnable spline functions on edges, and how do they compare against state-of-the-art models like Transformers and MLPs in terms of predictive accuracy, nonlinear modeling, and intrinsic interpretability?
+
+METHODOLOGY:
+
+Study design: Systematic and comprehensive literature review of neural network architectures in time series forecasting.
+
+Sample / corpus (size, characteristics): The rapidly expanding body of literature proposing, modifying, and applying KANs to time series forecasting tasks across various domains (finance, IoT, hydrology, etc.).
+
+Instruments / materials: Theoretical analysis of the Kolmogorov-Arnold representation theorem, Multi-Layer Perceptrons (MLPs), Transformer architectures, and KAN variants (including B-spline, wavelet, and polynomial-based implementations).
+
+Procedures (step by step):
+
+Detailed the mathematical foundations distinguishing KANs from traditional MLPs (learnable edge functions vs. fixed node activations).
+
+Categorized the recent architectural innovations in KANs, including adaptive grid refinement, gated residual mechanisms, and hybrid attention integration.
+
+Synthesized the empirical performance of KAN-based models across univariate, multivariate, and high-frequency time series forecasting tasks.
+
+Analyzed the mechanisms through which KANs provide "unparalleled transparency," specifically focusing on feature attribution and explicit symbolic representation.
+
+Identified the critical computational bottlenecks and scalability limitations facing current KAN implementations.
+
+Data analysis techniques: Qualitative synthesis, taxonomic classification of network architectures, and comparative evaluation of empirical forecasting metrics (such as MSE) reported in the primary literature.
+
+MAIN RESULTS:
+
+Result 1: KAN-based models frequently achieve state-of-the-art performance in time series forecasting, outperforming sophisticated Transformer models with up to 98% lower Mean Squared Error (MSE) on specific benchmarks.
+
+Result 2: The architecture of KANs—utilizing spline-parameterized univariate functions on the network edges—is highly effective at modeling complex, nonlinear dynamics across diverse data regimes, including univariate, multivariate, and high-frequency data.
+
+Result 3: KANs provide unparalleled transparency and interpretability in time series forecasting by allowing for explicit feature attribution and the potential decomposition of the network into interpretable mathematical functions.
+
+Result 4: The framework has seen rapid domain adaptation, with highly successful applications spanning cryptocurrency volatility prediction, hydrological forecasting, and IoT-enabled anomaly detection.
+
+Result 5: Despite their predictive and interpretative superiority, standard KAN implementations suffer from significant computational overhead during spline optimization and face challenges scaling in high-dimensional settings compared to the highly optimized matrix multiplications of MLPs.
+
+DIRECT QUOTATIONS:
+
+"This study presents Kolmogorov-Arnold Networks (KANs) for time series forecasting (TSF) as a transformative paradigm, leveraging the Kolmogorov-Arnold theorem to decompose multivariate temporal dependencies into interpretable, spline-parameterized univariate functions." (p. 1)
+"Through architectural innovations like adaptive grid refinement, gated residual mechanisms, and hybrid attention integration, KAN-based models achieve state-of-the-art performance, outperforming transformers with up to 98% lower MSE on benchmarks while offering unparalleled transparency in feature attribution." (p. 1)
+"However, challenges persist, including computational overhead in spline optimization and scalability in high-dimensional settings." (p. 1)
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that Kolmogorov-Arnold Networks represent a highly effective and transformative paradigm for time series forecasting. By successfully translating the Kolmogorov-Arnold representation theorem into a deep learning architecture, KANs bridge the longstanding gap between high predictive power and model interpretability. They excel at capturing complex nonlinear dynamics in fields ranging from cryptocurrency to IoT. However, the authors caution that the widespread adoption of KANs is currently bottlenecked by the computational intensity of spline optimization and the difficulties of scaling these networks to massive, high-dimensional datasets, which remain critical areas for future research.
+
+LIMITATIONS (as stated by authors):
+
+Significant computational overhead required for spline optimization during the training phase.
+
+Scalability challenges when applied to extremely high-dimensional datasets.
+
+ADDITIONAL NOTES:
+This review acts as a critical synthesis validating the use of KANs specifically for highly volatile and noisy financial time series (like cryptocurrency), confirming their capacity to simultaneously provide accurate forecasts and explicit, transparent feature attribution.
+
+-----
+
+BIBTEX KEY: cho_lee_kim_2025
+
+METADATA:
+
+Authors: So-Yoon Cho, Sungchul Lee, and Hyun-Gyoon Kim
+
+Year: 2025
+
+Title: Forecasting VIX using interpretable Kolmogorov-Arnold networks
+
+Journal/Publication: arXiv preprint arXiv:2502.00980v1
+
+DOI/URL: [not found in text, implicitly https://arxiv.org/abs/2502.00980]
+
+Keywords from article: Kolmogorov-Arnold network; Interpretable neural network; Time-series forecasting; Volatility; VIX
+
+OBJECTIVE(S):
+To employ Kolmogorov-Arnold Networks (KANs) for forecasting the CBOE Volatility Index (VIX) to overcome the black-box limitations of traditional multi-layer perceptrons (MLPs) by providing an interpretable, closed-form symbolic expression of the forecast.
+
+RESEARCH QUESTION / HYPOTHESIS:
+Can KANs achieve competitive forecasting performance for the VIX while utilizing significantly fewer parameters than MLPs/LSTMs and providing explicit, interpretable mathematical formulas that capture key volatility characteristics like mean reversion and the leverage effect?
+
+METHODOLOGY:
+
+Study design: Empirical comparative quantitative analysis evaluating time-series forecasting accuracy and model interpretability.
+
+Sample / corpus (size, characteristics): Daily CBOE VIX data from January 2004 to December 2023, alongside S&P 500 daily excess returns and 1-month U.S. Treasury bill yields.
+
+Instruments / materials: A parsimonious 2-layer KAN with 2 hidden nodes; traditional statistical models (ARMA, ARIMA, HAR, Forward filling); and neural network baselines (MLP, LSTM).
+
+Procedures (step by step):
+
+Preprocessed the historical VIX data into three distinct datasets designed to capture short-term lags, non-uniform lags, and aggregated multi-horizon averages (weekly, monthly, quarterly).
+
+Split the data chronologically into training, validation, and testing sets across three different period configurations to ensure robustness.
+
+Trained the KAN models using the L-BFGS optimizer, subsequently pruning unimportant edges and nodes based on low activation impact.
+
+Performed symbolification by replacing the trained B-spline-based activation functions with explicit symbolic functions (predominantly linear) and fine-tuning the affine parameters.
+
+Evaluated and compared forecasting accuracy against baseline models using statistical tests (Mincer-Zarnowitz, Durbin-Watson) and error metrics.
+
+Augmented the KAN model with S&P 500 excess returns to test its ability to dynamically capture the leverage effect.
+
+Data analysis techniques: Evaluation utilizing Mean Squared Error (MSE), Mean Absolute Error (MAE), Mean Absolute Percentage Error (MAPE), R-squared (R 
+2
+ ), and Quasi-Likelihood (QLIKE).
+
+MAIN RESULTS:
+
+Result 1: The trained B-spline activation functions naturally converged to nearly linear shapes, indicating that the tested explanatory variables primarily exert a linear influence on VIX forecasting.
+
+Result 2: The symbolification process successfully extracted parsimonious closed-form mathematical expressions, slightly improving the R 
+2
+  metric in almost all cases by mitigating slight over-fitting inherent in the splines.
+
+Result 3: KAN explicitly captured the mean-reverting property of the VIX, revealing a dominant dependence on the previous day's value (V 
+t−1
+​
+  coefficient typically > 0.8) and strong predictability from aggregated historical averages.
+
+Result 4: When augmented with S&P 500 excess returns, the KAN model explicitly captured the leverage effect, yielding downward-sloping activation functions that correctly associated lower stock returns with a higher predicted VIX.
+
+Result 5: KAN achieved forecasting accuracy (MSE, MAE, etc.) highly competitive with or superior to deep learning benchmarks (MLP and LSTM) while utilizing approximately 300 to 1,000 times fewer parameters (e.g., ~60-72 parameters for KAN vs. ~63,000 for LSTM).
+
+DIRECT QUOTATIONS:
+
+"Based on a parsimonious architecture with symbolic functions, KAN expresses a forecast of the VIX as a closed-form in terms of explanatory variables, and provide interpretable insights into key characteristics of the VIX, including mean reversion and the leverage effect." (p. 1)
+"Whereas these statistical models presuppose linearity, KAN identifies such structures directly from data, imposing no prior assumptions on its functional form." (p. 6)
+"Remarkably, KAN's parsimonious design consistently achieves performance on par with these more parameter-intensive MLP-based networks, underscoring its robustness and stability in noisy financial time-series data." (p. 14)
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that Kolmogorov-Arnold Networks provide a highly robust, interpretable, and parsimonious alternative to traditional black-box deep learning models (like MLPs and LSTMs) for financial time-series forecasting. By automatically pruning unimportant features and utilizing symbolification, KAN generates closed-form mathematical expressions that accurately describe the inherent characteristics of the VIX, such as volatility clustering, mean reversion, and the leverage effect. Ultimately, KANs achieve state-of-the-art predictive accuracy with vastly fewer parameters, supplying financial decision-makers with the transparency required for trustworthy risk management.
+
+LIMITATIONS (as stated by authors):
+
+[not found] (The authors do not explicitly outline a dedicated limitations section for their methodology, though they acknowledge that automated symbolification can sometimes undermine interpretability if forced on nonlinear anomalies).
+
+ADDITIONAL NOTES:
+The study deliberately restricted the KAN architecture to a highly parsimonious setup (2 layers, 2 hidden nodes) because empirical testing (detailed in the appendix) revealed that increasing depth or width did not yield significant improvements after the pruning and symbolification steps.
+
+-----
+
+BIBTEX KEY: oad_kasper_2025
+
+METADATA:
+Authors: Vidhi Oad, Param Pathak, Nouhaila Innan, Shalini D, and Muhammad Shafique   Year: 2025   Title: KASPER: Kolmogorov Arnold Networks for Stock Prediction and Explainable Regimes   Journal/Publication: arXiv preprint arXiv:2507.18983v1   DOI/URL: [not found in text, implicitly https://arxiv.org/abs/2507.18983]Keywords from article: Stock prediction, Regime detection, Kolmogorov-Arnold Networks (KAN), Explainable AI (XAI), Time-series forecasting   
+
+OBJECTIVE(S):
+To introduce KASPER, a novel framework that addresses the nonlinear and regime-dependent dynamics of financial markets by integrating unsupervised regime detection with sparse, spline-based Kolmogorov-Arnold Networks (KANs) to achieve both high predictive accuracy and explicit symbolic interpretability.   
+
+RESEARCH QUESTION / HYPOTHESIS:
+Can a framework that dynamically detects hidden market regimes (using a Gumbel-Softmax mechanism) and subsequently routes the data to regime-specific Kolmogorov-Arnold Networks (KANs) improve stock price forecasting accuracy while providing transparent, symbolic mathematical rules for each distinct market condition?   
+
+METHODOLOGY:
+Study design: Empirical quantitative evaluation of a novel neural network architecture for regime-aware financial time-series forecasting.   Sample / corpus (size, characteristics): Daily stock data (Open, High, Low, Close, Volume) for four major technology companies: Apple (AAPL), Amazon (AMZN), Google (GOOGL), and Microsoft (MSFT). The dataset covers the period from 2010 to 2023, comprising over 3,000 trading days per stock.   Instruments / materials: The KASPER framework (comprising an LSTM/GRU encoder, a Gumbel-Softmax bottleneck for regime detection, and regime-specific KAN sub-networks). Baselines included LSTM, GRU, Temporal Convolutional Networks (TCN), Transformers, and standard KANs.   Procedures (step by step):Preprocessed the historical OHLCV data using Min-Max scaling and created rolling sequences with a lookback window of 60 days to predict the next day's closing price.   Split the dataset chronologically into training (70%), validation (15%), and testing (15%) sets to preserve temporal order.   Passed the input sequences through an encoder to extract temporal embeddings, which were then mapped to a discrete probability distribution over $K$ regimes (e.g., $K=3$ for bull, bear, and stagnant) using the Gumbel-Softmax trick.   Routed the data to one of the $K$ distinct KAN sub-networks based on the identified regime.   Trained the entire model end-to-end using a joint loss function that combined the Mean Squared Error (MSE) for forecasting with a regime regularization term (to encourage discrete, balanced cluster assignments).   Evaluated forecasting performance against the baselines using standard error metrics.   Applied sparsification, pruning, and symbolic regression to the trained KANs to extract explicit mathematical formulas representing the decision logic for each market regime.   Data analysis techniques: Forecasting accuracy evaluated via Root Mean Squared Error (RMSE), Mean Absolute Error (MAE), and Mean Absolute Percentage Error (MAPE). Model complexity evaluated via parameter count. Interpretability evaluated by extracting symbolic formulas and analyzing the $R^2$ score of the fit.   
+
+MAIN RESULTS:
+Result 1: KASPER significantly outperformed all baseline models across all four tested stocks. For example, on AAPL, KASPER achieved an RMSE of 1.42, massively outperforming the standard KAN (2.15), Transformer (1.85), and LSTM (2.50).   Result 2: The standard KAN model (without the regime detection module) performed relatively poorly on the highly non-stationary financial data, demonstrating that explicitly decoupling the data into distinct market regimes is critical for the splines to learn effectively.   Result 3: The regime detection module successfully segmented the market into distinct, interpretable clusters corresponding to high volatility (bear markets), steady growth (bull markets), and sideways movement (stagnant markets) without requiring any prior manual labeling.   Result 4: The symbolification process successfully extracted highly accurate ($R^2 > 0.95$) mathematical formulas (e.g., combinations of sine, cosine, and polynomial functions) for each specific regime, detailing exactly how the model weighted features under different market conditions.   Result 5: KASPER operated with high parameter efficiency, requiring only 124K parameters, which is 62% fewer than the Transformer model (325K) and roughly equivalent to the LSTM (122K), while delivering far superior accuracy.   
+
+DIRECT QUOTATIONS:
+"To address this, we introduce Kolmogorov-Arnold networks for stock prediction and explainable regimes (KASPER), a novel framework that integrates regime detection, sparse spline-based function modeling, and symbolic rule extraction." (p. 1) 
+"KASPER consistently achieved the lowest error metrics across all datasets. On AAPL, KASPER achieved an RMSE of 1.42, outperforming the baseline KAN (2.15) and Transformer (1.85)." (p. 4) 
+"The results demonstrate that KASPER’s integration of regime detection and KAN-based modeling provides a powerful tool for financial forecasting, bridging the gap between high predictive accuracy and model transparency." (p. 5)   
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that KASPER effectively resolves the long-standing trade-off between predictive accuracy and interpretability in financial forecasting. By coupling an unsupervised Gumbel-Softmax regime detector with Kolmogorov-Arnold Networks, the model dynamically adapts to shifting market conditions and processes them using specialized, interpretable spline networks. This architecture not only outperforms complex models like Transformers and standard KANs in predictive accuracy but also yields explicit mathematical rules for each market state. This offers unparalleled transparency, making it a highly reliable and trustworthy tool for algorithmic trading and financial decision-making.   
+
+LIMITATIONS (as stated by authors):
+Training KASPER requires longer computational times compared to standard LSTMs or MLPs because the B-spline operations within the KAN layers currently lack specialized hardware-level optimizations on GPUs.   The interpretability phase (symbolic extraction) relies on predefined libraries of candidate functions and manual tuning of pruning thresholds, meaning the process is not fully automated and requires some human intervention.  
+
+ADDITIONAL NOTES:
+The paper's joint loss function is a critical component of its success. The authors specifically implemented a regularization term ($L_{regime}$) that acts as an entropy constraint. This forces the Gumbel-Softmax probabilities to be sharp (ensuring a clear assignment to a single regime rather than a blurred mixture) while maintaining a uniform prior to prevent the model from collapsing all data into just one single regime.
