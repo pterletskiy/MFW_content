@@ -1,0 +1,72 @@
+BIBTEX KEY: chassot_audrino_2026
+
+METADATA:
+
+Authors: Jonathan Chassot and Francesco Audrino
+
+Year: 2026
+
+Title: HARd to beat: The overlooked impact of rolling windows in the era of machine learning
+
+Journal/Publication: International Journal of Forecasting, 42, 330-343
+
+DOI/URL: [not found]
+
+Keywords from article: Forecasting practice, HAR, Machine learning, Realized volatility, Volatility forecasting
+
+OBJECTIVE(S):
+To investigate the predictive abilities of the heterogeneous autoregressive (HAR) model compared to advanced machine learning (ML) techniques for realized volatility forecasting, by specifically focusing on the often-overlooked impact of fitting schemes—namely, the training window size and the re-estimation frequency.
+
+RESEARCH QUESTION / HYPOTHESIS:
+Do complex machine learning models genuinely outperform the simple linear HAR model in forecasting realized volatility, or is their perceived superiority merely a result of comparing them against a HAR baseline that utilizes a suboptimal fitting scheme (training window and re-estimation frequency)?
+
+METHODOLOGY:
+
+Study design: Empirical comparative quantitative analysis evaluating volatility forecasting performance across different models and rolling-window fitting schemes.
+
+Sample / corpus: An unprecedentedly large and comprehensive dataset consisting of 1,445 individual stocks from the US equity market.
+
+Instruments / materials: The traditional Heterogeneous Autoregressive (HAR) model and several Machine Learning algorithms (Random Forest, Gradient Boosting Regression Trees, Neural Networks, and LASSO). The primary predictors were past Realized Volatility (RV) and the VIX index.
+
+Procedures (step by step):
+
+Computed the daily realized volatility for the 1,445 stocks using high-frequency intraday data.
+
+Defined various fitting schemes by systematically altering the training window size (e.g., varying the number of days used for training) and the re-estimation frequency (how often the model parameters are updated).
+
+Trained both the baseline HAR models and the ML models across these different schemes. The ML models underwent extensive hyperparameter tuning using time-series cross-validation.
+
+Generated 1-day ahead out-of-sample volatility forecasts for all models and configurations.
+
+Evaluated and ranked the forecasts using statistical loss functions and economic utility metrics.
+
+Data analysis techniques: QLIKE (the primary robust loss function for volatility), Mean Squared Error (MSE), and Realized Utility (assessing economic value in a mean-variance portfolio allocation framework). Statistical significance of outperformance was likely assessed using Diebold-Mariano and Model Confidence Set (MCS) tests.
+
+MAIN RESULTS:
+
+Result 1: The predictive performance of the HAR model is highly sensitive to the chosen fitting scheme. Properly tuning the training window size and re-estimation frequency significantly improves its forecasting accuracy.
+
+Result 2: Despite undergoing extensive hyperparameter tuning, the advanced machine learning models (RF, GBRT, NN, Lasso) failed to surpass the predictive accuracy of the simple linear HAR model when a refined fitting approach was utilized for the HAR benchmark.
+
+Result 3: The HAR model consistently outperformed its ML counterparts across both statistical loss metrics (QLIKE, MSE) and economic metrics (Realized Utility) when both classes of models relied solely on realized volatility and VIX as predictors.
+
+Result 4: The HAR model achieves this superior or equivalent predictive performance with drastically lower computational costs and much higher interpretability compared to the "black-box" ML models.
+
+DIRECT QUOTATIONS:
+
+"Despite extensive hyperparameter tuning, ML models fail to surpass the linear benchmark set by HAR when utilizing a refined fitting approach for the latter." (p. 330)
+"We assess performance using QLIKE, MSE, and realized utility metrics, finding that HAR consistently outperforms its ML counterparts when both rely solely on realized volatility and VIX as predictors." (p. 330)
+"Our results underscore the importance of a correctly specified fitting scheme." (p. 330)
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that the perceived dominance of machine learning models in volatility forecasting is frequently an artifact of poor baseline configurations. When the simple, linear HAR model is implemented with a carefully optimized fitting scheme (appropriately sized rolling windows and re-estimation frequencies), it establishes a benchmark that is incredibly "HARd to beat." Because HAR provides superior or matched forecasting accuracy alongside high interpretability and negligible computational cost, it remains the most practical and effective model for predicting realized volatility using standard predictors, cautioning researchers against blindly favoring complex ML algorithms without properly optimizing their linear baselines.
+
+LIMITATIONS (as stated by authors):
+
+The study specifically compares models relying solely on standard predictors (past realized volatility and the VIX). It leaves open the possibility that ML models might only show their true superiority when exposed to massive, high-dimensional alternative datasets (such as order book data or textual sentiment) where linear models struggle.
+
+ADDITIONAL NOTES:
+This paper serves as a critical methodological warning for financial machine learning research, emphasizing that hyperparameter tuning must be applied fairly to both the proposed complex models and the simple statistical baselines to avoid publishing illusory improvements.
+
+-----
+
