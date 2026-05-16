@@ -1,0 +1,60 @@
+BIBTEX KEY: liu_kan_2024
+
+METADATA:
+Authors: Ziming Liu, Yixuan Wang, Sachin Vaidya, Fabian Ruehle, James Halverson, Marin Soljačić, Thomas Y. Hou, Max Tegmark   Year: 2024   Title: KAN: Kolmogorov-Arnold Networks   Journal/Publication: arXiv preprint arXiv:2404.19756   DOI/URL: [not found]Keywords from article: [not found]
+
+OBJECTIVE(S):
+To propose Kolmogorov-Arnold Networks (KANs) as a promising architectural alternative to Multi-Layer Perceptrons (MLPs), demonstrating that placing learnable 1D spline functions on network edges rather than fixed activation functions on nodes significantly improves both predictive accuracy and human interpretability for AI and science tasks.  
+
+RESEARCH QUESTION / HYPOTHESIS:
+Do Kolmogorov-Arnold Networks, which parameterize all weight parameters as univariate spline functions based on the Kolmogorov-Arnold representation theorem, outperform traditional MLPs in terms of neural scaling laws, function fitting accuracy, and explicit interpretability (symbolic extraction) in scientific tasks?.  
+
+METHODOLOGY:
+Study design: Theoretical architectural proposal combined with empirical comparative evaluation of KANs against MLPs across mathematical, physical, and synthetic data tasks.  Sample / corpus (size, characteristics): A variety of datasets were used, including synthetic datasets for fitting special mathematical functions (e.g., Bessel, Jacobi), the Feynman dataset (consisting of 100 physical equations), a knot theory dataset (with 17 topological invariants), and a condensed matter physics dataset (for Anderson localization).  Instruments / materials: Kolmogorov-Arnold Networks (built with B-spline activation functions), Multi-Layer Perceptrons (MLPs), L-BFGS optimizer, and the PyTorch framework.  Procedures (step by step):Designed the KAN architecture by generalizing the exact Kolmogorov-Arnold representation theorem to arbitrary network widths and depths, using matrices of learnable 1D spline functions on the edges.  Implemented structural improvements including grid extension (to avoid spline boundary issues), grid regularization, and sparsification techniques (using L1 regularization and entropy penalties) to enhance both accuracy and interpretability.  Conducted extensive synthetic data experiments to compare the function-fitting accuracy and neural scaling laws of KANs versus MLPs.  Tested the interpretability and symbolic extraction capabilities of KANs on the Feynman dataset by pruning the networks down to minimal sub-graphs and identifying the exact mathematical formulas.  Applied KANs to authentic scientific discovery tasks, specifically predicting topological invariants in knot theory and identifying the mobility edge in Anderson localization.  Data analysis techniques: Evaluation using Root Mean Square Error (RMSE) loss, parameter count comparisons, computation of neural scaling exponents ($\alpha$), and evaluating the success rate of symbolic extraction (symbolification).  
+
+MAIN RESULTS:
+Result 1: KANs consistently exhibited much faster neural scaling laws than MLPs (e.g., $N^{-4}$ vs $N^{-1}$), allowing them to achieve higher predictive accuracy with significantly fewer parameters in function fitting tasks.  Result 2: Through sparsification and pruning, trained KANs could be "symbolified" to extract exact, closed-form mathematical formulas, successfully rediscovering known physical laws from the Feynman dataset.  Result 3: KANs demonstrated their ability to act as "collaborators" in scientific discovery by uncovering a new nonlinear relation among topological invariants in knot theory and extracting the exact mobility edge formula for Anderson localization.  Result 4: KANs were shown to naturally mitigate catastrophic forgetting compared to MLPs; because B-splines are locally supported, new data points only update local spline coefficients without destroying globally learned representations.  
+
+DIRECT QUOTATIONS:
+"While MLPs have fixed activation functions on nodes (“neurons”), KANs have learnable activation functions on edges (“weights”). KANs have no linear weights at all—every weight parameter is replaced by a univariate function parametrized as a spline." (p. 1) 
+"We show that KANs possess faster scaling laws than MLPs, and can be pruned down to individual functions, bridging the gap between machine learning and human interpretability." (p. 31) 
+"In summary, we have shown that KANs are promising alternatives to MLPs for scientific tasks, both because of their higher accuracy (faster scaling) and higher interpretability." (p. 33)   
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that Kolmogorov-Arnold Networks represent a fundamental architectural paradigm shift from standard MLPs, offering a highly compelling alternative for AI and scientific tasks where accuracy and interpretability are critical. By replacing static nodes with learnable 1D B-splines on the network edges, KANs achieve faster neural scaling laws and allow for the precise mathematical symbolification of learned representations. The authors assert that despite current computational inefficiencies related to hardware optimization, the mathematical elegance and empirical success of KANs in data-fitting and knowledge discovery prove their massive potential as an essential tool for future AI-assisted scientific research.  LIMITATIONS (as stated by authors):The primary limitation is slow training speed; KANs are currently about 10 times slower than MLPs with the same number of parameters because each weight is an independent spline function, making it difficult to fully exploit batch matrix multiplication optimizations in modern GPUs.  The current evaluation of KANs is restricted to relatively small-scale AI+Science tasks; their scalability to massive machine learning tasks (such as large language modeling) remains untested and potentially challenging.  
+
+ADDITIONAL NOTES:
+The theoretical foundation of KANs is the Kolmogorov-Arnold representation theorem (1957), which states that any multivariate continuous function can be perfectly represented as a superposition of continuous functions of a single variable and addition.
+
+-----
+
+BIBTEX KEY: liu_kan2_2024
+
+METADATA:
+Authors: Ziming Liu, Pingchuan Ma, Yixuan Wang, Wojciech Matusik, and Max TegmarkYear: 2024Title: KAN 2.0: Kolmogorov-Arnold Networks Meet ScienceJournal/Publication: arXiv preprint arXiv:2408.10205DOI/URL: [not found]Keywords from article: [not found]
+
+OBJECTIVE(S):
+To propose a unified framework bridging connectionist AI and symbolic science by seamlessly synergizing Kolmogorov-Arnold Networks (KANs) with scientific discovery processes. The study aims to introduce major new functionalities (MultKAN, kanpiler, and tree converter) to facilitate a bidirectional integration: incorporating scientific knowledge into KANs and extracting scientific insights from them.
+
+RESEARCH QUESTION / HYPOTHESIS:
+How can Kolmogorov-Arnold Networks be architecturally extended and equipped with specific software tools to seamlessly incorporate prior scientific knowledge, discover hidden modular structures, and extract transparent symbolic formulas (such as physical laws) directly from data?
+
+METHODOLOGY:
+Study design: Methodological and architectural extension of KANs, followed by empirical validation on physics and mathematical tasks.Sample / corpus (size, characteristics): Various synthetic and physical datasets simulating fundamental physical phenomena, including conserved quantities, Lagrangians, symmetries, and constitutive laws.Instruments / materials: MultKAN architecture (KANs with multiplication nodes), kanpiler (a compiler translating analytical formulas into KAN architectures), and tree converter (a tool converting networks into tree graphs). Implementation within the pykan library.Procedures (step by step):Developed MultKAN by introducing multiplication nodes into the standard KAN architecture to natively handle the multiplicative interactions common in physical laws.Created the kanpiler to allow researchers to compile known scientific equations directly into the KAN's structure, effectively injecting explicit inductive biases into the network prior to training.Designed the tree converter to transform trained neural network topologies into explicit parse trees to facilitate structural and modular analysis.Tested the bidirectional framework (Science $\rightarrow$ KAN and KAN $\rightarrow$ Science) on tasks discovering features, modular structures, and symbolic formulas across various physical examples.Data analysis techniques: Symbolic regression, network pruning, modularity analysis via tree graphs, and evaluating the exact symbolic recovery of fundamental physical equations.
+
+MAIN RESULTS:
+Result 1: The introduction of MultKAN (KANs with multiplication nodes) significantly improved the network's ability to model variable interactions and extract exact symbolic formulas compared to standard additive KANs.Result 2: The kanpiler successfully demonstrated the ability to embed prior analytical knowledge (mathematical formulas) directly into KAN architectures, establishing a reliable "science-to-KAN" pipeline that guides model training.Result 3: The tree converter effectively revealed the hidden modular structures of trained networks, aiding in the interpretability of complex interactions.Result 4: The unified framework proved highly effective at autonomously discovering diverse physical laws—including conserved quantities, Lagrangians, and symmetries—directly from data by extracting human-readable formulas.
+
+DIRECT QUOTATIONS:
+"To bridge the two worlds, we propose a framework to seamlessly synergize Kolmogorov-Arnold Networks (KANs) and science. The framework highlights KANs' usage for three aspects of scientific discovery: identifying relevant features, revealing modular structures, and discovering symbolic formulas." (p. 1)"We highlight major new functionalities in pykan: (1) MultKAN: KANs with multiplication nodes. (2) kanpiler: a KAN compiler that compiles symbolic formulas into KANs. (3) tree converter: convert KANs (or any neural networks) to tree graphs." (p. 1)
+
+AUTHORS' CONCLUSIONS:
+The authors conclude that KAN 2.0 represents a major step toward unifying the connectionist capabilities of modern AI with the symbolic requirements of rigorous science. By introducing multiplication nodes and dedicated compilation/conversion tools, the framework allows researchers to seamlessly inject prior physical knowledge into networks and reliably extract transparent, symbolic formulas from them. They assert that KANs are uniquely suited for AI-driven scientific discovery, functioning as collaborative tools that identify features, reveal structural modularity, and derive mathematical laws across diverse physical and scientific domains.  
+
+LIMITATIONS (as stated by authors):
+Training KANs and extracting complex symbolic formulas remains computationally intensive compared to standard MLPs.The process of symbolification and pruning heavily relies on careful hyperparameter tuning and human intervention, meaning the formula extraction is not yet fully automated.The scalability of extracting clean symbolic formulas from highly noisy, high-dimensional real-world data requires further exploration, as current demonstrations focus primarily on fundamental physics tasks.
+
+ADDITIONAL NOTES:This paper provides the exact methodological justification for exploring multiplicative interactions and utilizing the kanpiler for symbolic extraction in financial time-series forecasting, making it a critical foundation for the interpretability phase of your thesis.
+
+-----
+
