@@ -1,0 +1,8 @@
+when entering pc:
+cd C:\Users\francisco.pedrosa\Documents\Petr\scripts
+.\github_login.ps1
+
+
+when exiting pc:
+cd C:\Users\francisco.pedrosa\Documents\Petr\scripts
+.\github_logout.ps1
